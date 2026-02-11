@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stumpy's Great Rescue</title>
+    <title>Stumpy's Great Rescue - Audio Edition</title>
     <style>
         body { 
             margin: 0; 
@@ -25,6 +25,7 @@
             top: 20px;
             left: 20px;
             pointer-events: none;
+            text-shadow: 2px 2px 2px black;
         }
     </style>
 </head>
@@ -37,33 +38,40 @@
 
 <canvas id="gameCanvas"></canvas>
 
+<script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 800;
 canvas.height = 400;
 
-// Audio Setup
+// --- AUDIO SYSTEM ---
 let audioCtx = null;
+
 function initAudio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
 }
 
-// Sound Synthesis Function
-function playSound(freq, type, duration) {
+function playSound(freq, type, duration, vol = 0.1) {
     if (!audioCtx) return;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
+    
     osc.type = type;
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    osc.connect(gain);
+    
     gain.connect(audioCtx.destination);
-    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    osc.connect(gain);
+    
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    
     osc.start();
     osc.stop(audioCtx.currentTime + duration);
 }
 
-// Game Config & Assets
+// --- GAME CONFIG ---
 let player = { 
     x: 50, y: 300, w: 25, h: 35, 
     dx: 0, dy: 0, 
@@ -77,9 +85,8 @@ let cameraX = 0;
 const gravity = 0.7;
 const jumpPower = -14;
 const moveSpeed = 5;
-const gameStartTime = Date.now(); // Track when the game started
+const gameStartTime = Date.now();
 
-// Level Design
 let platforms = [
     { x: 0, y: 350, w: 300, h: 50, sink: false },
     { x: 400, y: 280, w: 120, h: 20, sink: true, speed: 0 },
@@ -100,10 +107,9 @@ let fairies = [
     { x: 920, y: 220, collected: false }
 ];
 
-// Input Controls
 let keys = {};
 window.onkeydown = (e) => {
-    initAudio(); // Initialize audio on first interaction
+    initAudio(); // Resume/Start audio context on user input
     keys[e.code] = true;
 };
 window.onkeyup = (e) => keys[e.code] = false;
@@ -143,21 +149,23 @@ function update() {
             }
             if (p.castle && player.x > p.x + 100) {
                 player.win = true;
-                playSound(600, 'triangle', 0.5); // Win Sound
+                playSound(500, 'sine', 0.3);
+                setTimeout(() => playSound(700, 'sine', 0.5), 100);
             }
         }
     });
 
-    // Turrets & Fireballs (With 5-second grace period)
+    // Turrets & Fireballs
     let now = Date.now();
     let timeElapsed = now - gameStartTime;
 
-    if (timeElapsed > 5000) { // 5-second delay
+    // Only fire if 5 seconds have passed
+    if (timeElapsed > 5000) {
         turrets.forEach(t => {
             if (now - t.lastShot > 2000 && Math.abs(player.x - t.x) < 500) {
                 fireballs.push({ x: t.x, y: t.y, dx: -4 });
                 t.lastShot = now;
-                playSound(100, 'sawtooth', 0.1); // Shoot Sound
+                playSound(100, 'sawtooth', 0.1, 0.05); // Turret Sound
             }
         });
     }
@@ -168,7 +176,7 @@ function update() {
             f.y < player.y + player.h && f.y + 15 > player.y) {
             player.health -= 25;
             fireballs.splice(index, 1);
-            playSound(50, 'sawtooth', 0.3); // Hurt Sound
+            playSound(60, 'sawtooth', 0.2); // Hit Sound
         }
         if (f.x < cameraX - 100) fireballs.splice(index, 1);
     });
@@ -179,13 +187,13 @@ function update() {
             f.collected = true;
             player.score++;
             player.health = Math.min(100, player.health + 20);
-            playSound(800, 'sine', 0.2); // Collect Sound
+            playSound(880, 'sine', 0.2); // Fairy Sound
         }
     });
 
     if (player.y > canvas.height || player.health <= 0) {
-        if (!player.dead) playSound(40, 'square', 0.5); // Death Sound
         player.dead = true;
+        playSound(40, 'square', 0.4); // Death Sound
     }
 
     draw();
@@ -247,15 +255,17 @@ function draw() {
 
     ctx.restore();
 
+    // UI Update
     document.getElementById('health').innerText = player.health;
     document.getElementById('score').innerText = player.score;
 
-    // Warning text for the 5s delay
+    // Turret Warning UI
     let timeElapsed = Date.now() - gameStartTime;
     if (timeElapsed < 5000 && !player.dead && !player.win) {
         ctx.fillStyle = "yellow";
-        ctx.font = "16px Courier";
-        ctx.fillText(`TURRETS ONLINE IN: ${Math.ceil((5000 - timeElapsed)/1000)}s`, 300, 50);
+        ctx.font = "bold 16px Courier";
+        let timeLeft = Math.ceil((5000 - timeElapsed) / 1000);
+        ctx.fillText("TURRETS OFFLINE - STARTING IN: " + timeLeft + "s", 240, 40);
     }
 
     if (player.dead) {
@@ -275,5 +285,6 @@ function draw() {
 }
 
 update();
+</script>
 </body>
 </html>
