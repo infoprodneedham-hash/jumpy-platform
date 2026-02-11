@@ -37,11 +37,31 @@
 
 <canvas id="gameCanvas"></canvas>
 
-<script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 800;
 canvas.height = 400;
+
+// Audio Setup
+let audioCtx = null;
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+// Sound Synthesis Function
+function playSound(freq, type, duration) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
 
 // Game Config & Assets
 let player = { 
@@ -57,6 +77,7 @@ let cameraX = 0;
 const gravity = 0.7;
 const jumpPower = -14;
 const moveSpeed = 5;
+const gameStartTime = Date.now(); // Track when the game started
 
 // Level Design
 let platforms = [
@@ -81,7 +102,10 @@ let fairies = [
 
 // Input Controls
 let keys = {};
-window.onkeydown = (e) => keys[e.code] = true;
+window.onkeydown = (e) => {
+    initAudio(); // Initialize audio on first interaction
+    keys[e.code] = true;
+};
 window.onkeyup = (e) => keys[e.code] = false;
 
 function update() {
@@ -95,6 +119,7 @@ function update() {
     if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.grounded) {
         player.dy = jumpPower;
         player.grounded = false;
+        playSound(150, 'square', 0.1); // Jump Sound
     }
 
     // Physics
@@ -103,7 +128,6 @@ function update() {
     player.y += player.dy;
     player.grounded = false;
 
-    // Camera follow (keep player in the first 1/3 of the screen)
     cameraX = Math.max(0, player.x - 200);
 
     // Collisions: Platforms
@@ -117,28 +141,35 @@ function update() {
                 p.speed += 0.15;
                 p.y += p.speed;
             }
-            if (p.castle && player.x > p.x + 100) player.win = true;
+            if (p.castle && player.x > p.x + 100) {
+                player.win = true;
+                playSound(600, 'triangle', 0.5); // Win Sound
+            }
         }
     });
 
-    // Turrets & Fireballs
+    // Turrets & Fireballs (With 5-second grace period)
     let now = Date.now();
-    turrets.forEach(t => {
-        if (now - t.lastShot > 2000 && Math.abs(player.x - t.x) < 500) {
-            fireballs.push({ x: t.x, y: t.y, dx: -4 });
-            t.lastShot = now;
-        }
-    });
+    let timeElapsed = now - gameStartTime;
+
+    if (timeElapsed > 5000) { // 5-second delay
+        turrets.forEach(t => {
+            if (now - t.lastShot > 2000 && Math.abs(player.x - t.x) < 500) {
+                fireballs.push({ x: t.x, y: t.y, dx: -4 });
+                t.lastShot = now;
+                playSound(100, 'sawtooth', 0.1); // Shoot Sound
+            }
+        });
+    }
 
     fireballs.forEach((f, index) => {
         f.x += f.dx;
-        // Hit detection
         if (f.x < player.x + player.w && f.x + 15 > player.x &&
             f.y < player.y + player.h && f.y + 15 > player.y) {
             player.health -= 25;
             fireballs.splice(index, 1);
+            playSound(50, 'sawtooth', 0.3); // Hurt Sound
         }
-        // Clean up off-screen fireballs
         if (f.x < cameraX - 100) fireballs.splice(index, 1);
     });
 
@@ -148,11 +179,12 @@ function update() {
             f.collected = true;
             player.score++;
             player.health = Math.min(100, player.health + 20);
+            playSound(800, 'sine', 0.2); // Collect Sound
         }
     });
 
-    // Death condition
     if (player.y > canvas.height || player.health <= 0) {
+        if (!player.dead) playSound(40, 'square', 0.5); // Death Sound
         player.dead = true;
     }
 
@@ -171,10 +203,9 @@ function draw() {
         ctx.fillStyle = p.castle ? "#555" : (p.sink ? "#633" : "#444");
         ctx.fillRect(p.x, p.y, p.w, p.h);
         if(p.castle) {
-            // Draw Castle Walls
             ctx.fillStyle = "#333";
             ctx.fillRect(p.x + 150, p.y - 100, 200, 100);
-            ctx.fillStyle = "pink"; // The Princess
+            ctx.fillStyle = "pink"; 
             ctx.fillRect(p.x + 240, p.y - 40, 20, 40);
         }
     });
@@ -191,7 +222,7 @@ function draw() {
         ctx.fill();
     });
 
-    // Draw Fairies (Twinkling)
+    // Draw Fairies
     ctx.fillStyle = `hsla(60, 100%, 50%, ${0.5 + Math.sin(Date.now()/200)*0.5})`;
     fairies.forEach(f => {
         if (!f.collected) {
@@ -201,35 +232,38 @@ function draw() {
         }
     });
 
-    // Draw Stumpy Stick Figure
+    // Draw Stumpy
     ctx.strokeStyle = "white";
     ctx.lineWidth = 3;
     const px = player.x + 12;
     const py = player.y;
-    // Head
     ctx.strokeRect(px - 5, py - 15, 10, 10);
-    // Body
     ctx.beginPath();
     ctx.moveTo(px, py - 5); ctx.lineTo(px, py + 15);
-    // Arms
     ctx.moveTo(px - 10, py + 5); ctx.lineTo(px + 10, py + 5);
-    // Legs
     ctx.moveTo(px, py + 15); ctx.lineTo(px - 8, py + 30);
     ctx.moveTo(px, py + 15); ctx.lineTo(px + 8, py + 30);
     ctx.stroke();
 
     ctx.restore();
 
-    // UI Update
     document.getElementById('health').innerText = player.health;
     document.getElementById('score').innerText = player.score;
 
-    // Overlay Screens
+    // Warning text for the 5s delay
+    let timeElapsed = Date.now() - gameStartTime;
+    if (timeElapsed < 5000 && !player.dead && !player.win) {
+        ctx.fillStyle = "yellow";
+        ctx.font = "16px Courier";
+        ctx.fillText(`TURRETS ONLINE IN: ${Math.ceil((5000 - timeElapsed)/1000)}s`, 300, 50);
+    }
+
     if (player.dead) {
         ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "white";
-        ctx.fillText("GAME OVER - PRESS F5 TO RESTART", 280, 200);
+        ctx.font = "20px Courier";
+        ctx.fillText("GAME OVER - PRESS F5 TO RESTART", 230, 200);
     }
     if (player.win) {
         ctx.fillStyle = "rgba(0,0,0,0.7)";
@@ -241,6 +275,5 @@ function draw() {
 }
 
 update();
-</script>
 </body>
 </html>
