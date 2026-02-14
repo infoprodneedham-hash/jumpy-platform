@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman Hero: 3 Lives Edition</title>
+    <title>Stickman Hero: Spring Jump Edition</title>
     <style>
         body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
@@ -36,7 +36,7 @@ const friction = 0.8;
 const player = {
     x: 50, y: 310, w: 20, h: 40,
     vx: 0, vy: 0,
-    speed: 5, jumpPower: -11,
+    speed: 5, jumpPower: -10,
     grounded: false,
     hasRaygun: false,
     attached: false,
@@ -49,6 +49,7 @@ let platforms = [];
 let hazards = [];
 let collectibles = [];
 let projectiles = [];
+let springs = []; // New Spring Boards
 let boss = { x: 620, y: 270, w: 60, h: 80, hp: 3, alive: true };
 let turretTimer = 0;
 
@@ -59,14 +60,16 @@ window.addEventListener('keyup', e => keys[e.code] = false);
 function initScreen(num) {
     currentScreen = num;
     document.getElementById('screenNum').innerText = num;
-    platforms = []; hazards = []; collectibles = []; projectiles = [];
+    platforms = []; hazards = []; collectibles = []; projectiles = []; springs = [];
     player.vx = 0; player.vy = 0; player.attached = false;
     
     if (num === 1) {
         player.x = 50; player.y = 310;
         platforms.push({x: 0, y: 350, w: 800, h: 50}); 
-        platforms.push({x: 300, y: 220, w: 150, h: 20});
-        collectibles.push({x: 320, y: 190, type: 'coin'}, {x: 370, y: 190, type: 'coin'}, {x: 420, y: 190, type: 'coin'});
+        platforms.push({x: 325, y: 180, w: 150, h: 20}); // Raised platform for turret/coins
+        // Spring board to reach the platform
+        springs.push({x: 250, y: 335, w: 40, h: 15});
+        collectibles.push({x: 350, y: 140, type: 'coin'}, {x: 400, y: 140, type: 'coin'}, {x: 450, y: 140, type: 'coin'});
     } else if (num === 2) {
         player.x = 80; player.y = 150;
         player.attached = true;
@@ -89,11 +92,10 @@ function handleDeath() {
     if (invulnFrames > 0) return;
     lives--;
     document.getElementById('lives').innerText = lives;
-    if (lives <= 0) {
-        gameOver = true;
-    } else {
-        invulnFrames = 60; // 1 second invulnerability
-        initScreen(currentScreen); // Reset current screen
+    if (lives <= 0) gameOver = true;
+    else {
+        invulnFrames = 60;
+        initScreen(currentScreen);
     }
 }
 
@@ -114,6 +116,7 @@ function update() {
         if (keys['ArrowLeft']) player.vx = -player.speed;
         else if (keys['ArrowRight']) player.vx = player.speed;
         else player.vx *= friction;
+        
         if (keys['Space'] && player.grounded) {
             player.vy = player.jumpPower;
             player.grounded = false;
@@ -121,14 +124,9 @@ function update() {
         player.vy += gravity;
         player.x += player.vx;
         player.y += player.vy;
-        if (currentScreen === 2 && keys['ShiftLeft']) {
-            let dx = (player.x + player.w/2) - player.ropeAnchor.x;
-            let dy = (player.y + player.h/2) - player.ropeAnchor.y;
-            let dist = Math.sqrt(dx*dx + dy*dy);
-            if (Math.abs(dist - player.ropeLength) < 50) player.attached = true;
-        }
     }
 
+    // Platform Collisions
     player.grounded = false;
     platforms.forEach(p => {
         if (p.moving) p.x = p.startX + Math.sin(Date.now() / 600) * p.range;
@@ -141,16 +139,25 @@ function update() {
         }
     });
 
+    // Spring Board Collision
+    springs.forEach(s => {
+        if (player.x + player.w > s.x && player.x < s.x + s.w &&
+            player.y + player.h >= s.y && player.y + player.h <= s.y + player.vy + 10) {
+                player.vy = -16; // Massive spring boost
+                player.grounded = false;
+        }
+    });
+
     if (player.x > 800) { if (currentScreen < 4) initScreen(currentScreen + 1); else player.x = 780; }
     if (player.x < 0) player.x = 0;
     if (player.y > 410) handleDeath();
 
-    // Turret firing every 3 seconds (180 frames)
+    // Turret: 180 frames = 3 seconds
     if (currentScreen === 1) {
         turretTimer++;
         if (turretTimer >= 180) {
-            hazards.push({x: 375, y: 205, vx: 5, w: 12, h: 12, type: 'fireball'}, 
-                         {x: 375, y: 205, vx: -5, w: 12, h: 12, type: 'fireball'});
+            hazards.push({x: 400, y: 165, vx: 5, w: 12, h: 12, type: 'fireball'}, 
+                         {x: 400, y: 165, vx: -5, w: 12, h: 12, type: 'fireball'});
             turretTimer = 0;
         }
     }
@@ -217,6 +224,9 @@ function draw() {
     ctx.fillStyle = '#444';
     platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
 
+    ctx.fillStyle = '#ff3333'; // Spring boards
+    springs.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
+
     hazards.forEach(h => {
         ctx.fillStyle = h.type === 'fireball' ? '#ff4500' : '#32cd32';
         ctx.beginPath(); ctx.arc(h.x, h.y, 8, 0, Math.PI*2); ctx.fill();
@@ -228,8 +238,8 @@ function draw() {
     });
 
     if (currentScreen === 1) {
-        ctx.fillStyle = 'black'; ctx.fillRect(365, 200, 20, 20);
-        ctx.fillRect(355, 205, 40, 8);
+        ctx.fillStyle = 'black'; ctx.fillRect(390, 160, 20, 20); // Turret
+        ctx.fillRect(380, 165, 40, 8);
     }
 
     if (currentScreen === 4) {
@@ -243,7 +253,6 @@ function draw() {
 
     ctx.fillStyle = 'cyan'; projectiles.forEach(p => ctx.fillRect(p.x, p.y, 15, 5));
 
-    // Player (Flickers when invulnerable)
     if (invulnFrames % 10 < 5) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
         const {x, y} = player;
@@ -259,11 +268,11 @@ function draw() {
 
     if (gameOver) {
         ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400);
-        ctx.fillStyle='white'; ctx.textAlign="center"; ctx.fillText("OUT OF LIVES - PRESS R TO RESTART", 400, 200);
+        ctx.fillStyle='white'; ctx.textAlign="center"; ctx.fillText("OUT OF LIVES - PRESS R", 400, 200);
     }
     if (gameWin) {
         ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(0,0,800,400);
-        ctx.fillStyle='black'; ctx.textAlign="center"; ctx.fillText("VICTORY! PRINCESS SAVED!", 400, 200);
+        ctx.fillStyle='black'; ctx.textAlign="center"; ctx.fillText("VICTORY!", 400, 200);
     }
 }
 
