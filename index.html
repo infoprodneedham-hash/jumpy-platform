@@ -2,230 +2,299 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stumpy's Odyssey - Solid Start</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stickman Hero: Princess Rescue</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #050505; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: 'Courier New', Courier, monospace; }
-        canvas { border: 4px solid #444; background: #000; }
-        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 2px 2px 0px #000; font-weight: bold; }
+        body { margin: 0; background: #222; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: sans-serif; overflow: hidden; }
+        canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #ui { position: absolute; top: 20px; left: 20px; font-size: 20px; pointer-events: none; }
     </style>
 </head>
 <body>
-
-<div id="ui">
-    STAGE: <span id="stage">1</span>/5 | LIVES: <span id="lives">5</span><br>
-    HEALTH: <span id="health">100</span>% | FAIRIES: <span id="score">0</span>
-</div>
-
-<canvas id="gameCanvas"></canvas>
+    <div id="ui">Coins: <span id="coinCount">0</span> | Screen: <span id="screenNum">1</span></div>
+    <canvas id="gameCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const coinDisplay = document.getElementById('coinCount');
+const screenDisplay = document.getElementById('screenNum');
+
 canvas.width = 800;
 canvas.height = 400;
 
-let audioCtx = null;
-function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function playSfx(f, t, d, v = 0.1) {
-    if (!audioCtx) return;
-    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-    o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
-    g.connect(audioCtx.destination); o.connect(g);
-    g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + d);
-    o.start(); o.stop(audioCtx.currentTime + d);
-}
+// Game State
+let currentScreen = 1;
+let coins = 0;
+let gameOver = false;
+let gameWin = false;
 
-let stage = 1;
-let player = { x: 50, y: 300, w: 20, h: 30, dx: 0, dy: 0, health: 100, lives: 5, score: 0, grounded: true, hasGun: false, plat: null };
-let boss = { x: 1200, y: 150, w: 90, h: 110, hp: 5, active: false };
-let platforms = [], turrets = [], enemies = [], fireballs = [], fairies = [], ropes = [], bullets = [];
-let cameraX = 0;
+// Physics Constants
+const gravity = 0.5;
+const friction = 0.8;
 
-function setupStage(s) {
-    // Reset stage variables
-    fireballs = []; bullets = []; ropes = []; fairies = []; turrets = []; enemies = [];
-    boss.active = (s === 5);
-    boss.hp = 5;
+// Player Object
+const player = {
+    x: 50, y: 300, w: 20, h: 40,
+    vx: 0, vy: 0,
+    speed: 5, jumpPower: -10,
+    grounded: false,
+    hasRaygun: false,
+    isSwinging: false,
+    ropeAngle: 0,
+    ropeLength: 150,
+    ropeAnchor: { x: 400, y: 0 }
+};
 
-    // Define Platforms first so we can spawn the player ON them
-    if (s === 1) {
-        platforms = [
-            {x: 0, y: 300, w: 400, h: 100}, // Huge starter block
-            {x: 450, y: 220, w: 150, h: 20},
-            {x: 700, y: 300, w: 400, h: 100, exit: true}
-        ];
-        enemies = [{x: 800, y: 280, start: 800, range: 150, dir: 1}];
-        turrets = [{x: 500, y: 190}];
-    } else if (s === 2) {
-        platforms = [
-            {x: 0, y: 300, w: 200, h: 100},
-            {x: 250, y: 220, w: 150, h: 20},
-            {x: 100, y: 140, w: 150, h: 20},
-            {x: 400, y: 100, w: 150, h: 20},
-            {x: 700, y: 280, w: 300, h: 120, exit: true}
-        ];
-        turrets = [{x: 420, y: 70}];
-    } else if (s === 3) {
-        platforms = [
-            {x: 0, y: 300, w: 200, h: 100},
-            {x: 250, y: 280, w: 150, h: 20, move: true, startX: 250, dist: 200, speed: 0.002, lastX: 250},
-            {x: 600, y: 200, w: 150, h: 20, move: true, startX: 600, dist: 150, speed: 0.004, lastX: 600},
-            {x: 950, y: 300, w: 400, h: 100, exit: true}
-        ];
-    } else if (s === 4) {
-        platforms = [
-            {x: 0, y: 300, w: 150, h: 100},
-            {x: 200, y: 220, w: 120, h: 20, move: true, startX: 200, dist: 150, speed: 0.005, lastX: 200},
-            {x: 550, y: 150, w: 150, h: 20},
-            {x: 850, y: 300, w: 400, h: 100, exit: true}
-        ];
-    } else if (s === 5) {
-        platforms = [
-            {x: 0, y: 300, w: 400, h: 100},
-            {x: 450, y: 300, w: 1000, h: 100},
-            {x: 50, y: 80, w: 120, h: 20, gun: true},
-            {x: 1300, y: 180, w: 100, h: 20, princess: true}
-        ];
-        ropes = [{x: 100, y: 80, h: 220}];
-    }
+// Controls
+const keys = {};
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
 
-    // MANDATORY SPAWN FIX: Set player Y exactly on the first platform
-    player.x = 60;
-    player.y = platforms[0].y - player.h;
-    player.dy = 0;
-    player.grounded = true;
-    player.health = 100;
-    player.hasGun = false;
-    player.plat = null;
+// Entities
+let platforms = [];
+let hazards = []; // Fireballs, water, alien
+let collectibles = []; // Coins, raygun
+let boss = { x: 600, y: 200, w: 60, h: 80, hp: 3, alive: true };
+let projectiles = [];
+let turretTimer = 0;
+
+function initScreen(num) {
+    currentScreen = num;
+    screenDisplay.innerText = num;
+    platforms = [];
+    hazards = [];
+    collectibles = [];
+    projectiles = [];
+    player.vx = 0;
+    player.vy = 0;
     
-    playSfx(200, 'sine', 0.2);
-}
-
-let keys = {};
-window.onkeydown = (e) => { initAudio(); keys[e.code] = true; if(e.code === 'KeyF' && player.hasGun) fire(); };
-window.onkeyup = (e) => keys[e.code] = false;
-
-function fire() {
-    bullets.push({x: player.x + 20, y: player.y + 10, dx: 12});
-    playSfx(1000, 'sine', 0.05);
+    if (num === 1) {
+        player.x = 50;
+        platforms.push({x: 0, y: 350, w: 200, h: 50}, {x: 300, y: 250, w: 150, h: 20}, {x: 600, y: 350, w: 200, h: 50});
+        // Turret is at 375, 230
+    } else if (num === 2) {
+        player.x = 20;
+        platforms.push({x: 0, y: 350, w: 100, h: 50}, {x: 700, y: 350, w: 100, h: 50});
+        collectibles.push({x: 250, y: 200, type: 'coin'}, {x: 400, y: 150, type: 'coin'}, {x: 550, y: 200, type: 'coin'});
+    } else if (num === 3) {
+        player.x = 20;
+        platforms.push({x: 0, y: 350, w: 100, h: 50}, {x: 300, y: 300, w: 150, h: 20, moving: true, range: 100, startX: 300}, {x: 700, y: 350, w: 100, h: 50});
+        hazards.push({x: 500, y: 100, w: 30, h: 30, type: 'alien_drone'});
+    } else if (num === 4) {
+        player.x = 20;
+        platforms.push({x: 0, y: 350, w: 800, h: 50}, {x: 50, y: 150, w: 100, h: 20});
+        collectibles.push({x: 70, y: 110, type: 'raygun'});
+    }
 }
 
 function update() {
-    if (player.lives <= 0 || (stage === 5 && boss.hp === -1)) return;
+    if (gameOver || gameWin) return;
 
-    if (keys['ArrowRight'] || keys['KeyD']) player.dx = 5;
-    else if (keys['ArrowLeft'] || keys['KeyA']) player.dx = -5;
-    else player.dx = 0;
+    // Movement
+    if (keys['ArrowLeft']) player.vx = -player.speed;
+    else if (keys['ArrowRight']) player.vx = player.speed;
+    else player.vx *= friction;
 
-    let climbing = ropes.some(r => player.x+10 > r.x-20 && player.x+10 < r.x+20 && player.y < r.y+r.h && player.y+player.h > r.y);
-    if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW'])) {
-        if (climbing) { player.y -= 5; player.dy = 0; }
-        else if (player.grounded) { player.dy = -14; player.grounded = false; playSfx(150, 'square', 0.1); }
+    if (keys['Space'] && player.grounded) {
+        player.vy = player.jumpPower;
+        player.grounded = false;
     }
 
-    if (player.plat) { player.x += (player.plat.x - player.plat.lastX); }
+    // Gravity
+    player.vy += gravity;
+    player.x += player.vx;
+    player.y += player.vy;
 
-    player.x += player.dx;
-    if (!climbing) { player.dy += 0.7; player.y += player.dy; }
+    // Screen Transition
+    if (player.x > canvas.width) {
+        if (currentScreen < 4) initScreen(currentScreen + 1);
+        else player.x = canvas.width - player.w;
+    }
+    if (player.x < 0) player.x = 0;
+
+    // Platform Collision
     player.grounded = false;
-    player.plat = null;
-
-    cameraX = Math.max(0, player.x - 200);
-
     platforms.forEach(p => {
-        if (p.move) { p.lastX = p.x; p.x = p.startX + Math.sin(Date.now() * p.speed) * p.dist; }
-        if (player.x < p.x + p.w && player.x + player.w > p.x && player.y + player.h > p.y && player.y + player.h < p.y + player.dy + 15) {
-            player.dy = 0; player.y = p.y - player.h; player.grounded = true;
-            player.plat = p;
-            if (p.exit) { stage++; if(stage <= 5) setupStage(stage); }
-            if (p.gun && !player.hasGun) { player.hasGun = true; playSfx(600, 'sawtooth', 0.3); }
-            if (p.princess && boss.hp <= 0) { boss.hp = -1; playSfx(500, 'sine', 1); }
+        if (p.moving) {
+            p.x = p.startX + Math.sin(Date.now() / 500) * p.range;
+        }
+        if (player.x < p.x + p.w && player.x + player.w > p.x && player.y + player.h > p.y && player.y + player.h < p.y + p.vy + 10) {
+            player.y = p.y - player.h;
+            player.vy = 0;
+            player.grounded = true;
+            if (p.moving) player.x += Math.cos(Date.now() / 500) * 2; // Simple stickiness
         }
     });
 
-    enemies.forEach(e => {
-        if (e.dead) return;
-        e.x += e.dir * 2;
-        if (Math.abs(e.x - e.start) > e.range) e.dir *= -1;
-        if (Math.hypot(player.x - e.x, player.y - e.y) < 25) { player.health -= 2; }
-    });
-
-    let now = Date.now();
-    turrets.forEach(t => {
-        if (now - (t.last || 0) > 2000 && Math.abs(player.x - t.x) < 500) {
-            fireballs.push({ x: t.x, y: t.y, dx: -6 });
-            t.last = now;
+    // Screen 1: Turret Logic
+    if (currentScreen === 1) {
+        turretTimer++;
+        if (turretTimer > 180) { // 3 seconds at 60fps
+            hazards.push({x: 375, y: 235, vx: 4, vy: 0, w: 10, h: 10, type: 'fireball'});
+            hazards.push({x: 375, y: 235, vx: -4, vy: 0, w: 10, h: 10, type: 'fireball'});
+            turretTimer = 0;
         }
-    });
+    }
 
-    fireballs.forEach((f, i) => {
-        f.x += f.dx;
-        if (f.x < player.x + player.w && f.x + 10 > player.x && f.y < player.y + player.h && f.y + 10 > player.y) {
-            player.health -= 25; fireballs.splice(i, 1);
+    // Screen 2: Rope Logic (Simplified as proximity-based swing)
+    if (currentScreen === 2) {
+        if (player.y > 360) gameOver = true; // Water
+        let dist = Math.hypot(player.x - 400, player.y - 0);
+        if (dist < 250 && keys['ShiftLeft']) {
+            player.isSwinging = true;
+            player.vy = -2; // Cheat physics for "swinging" feel
+            player.vx += (player.x < 400) ? 0.5 : -0.5;
         }
-    });
+    }
 
-    if (boss.active && boss.hp > 0) {
-        boss.y = 100 + Math.sin(now / 400) * 80;
-        if (now % 60 < 10) fireballs.push({ x: boss.x, y: boss.y + 50, dx: -8 });
-        bullets.forEach((b, i) => {
-            if (b.x > boss.x && b.x < boss.x + boss.w && b.y > boss.y && b.y < boss.y + boss.h) {
-                boss.hp--; bullets.splice(i, 1); playSfx(100, 'square', 0.1);
+    // Screen 3: Alien Drone Logic
+    if (currentScreen === 3) {
+        hazards.forEach(h => {
+            if (h.type === 'alien_drone') {
+                h.x += (player.x - h.x) * 0.01;
+                h.y += (player.y - h.y) * 0.01;
             }
         });
     }
-    bullets.forEach(b => b.x += b.dx);
 
-    if (player.y > 450 || player.health <= 0) {
-        player.lives--;
-        if (player.lives > 0) setupStage(stage);
+    // Screen 4: Boss & Raygun
+    if (currentScreen === 4 && player.hasRaygun && keys['KeyF']) {
+        if (projectiles.length < 1) {
+            projectiles.push({x: player.x + 20, y: player.y + 10, vx: 7});
+            keys['KeyF'] = false; // Semi-auto
+        }
     }
 
-    draw();
-    requestAnimationFrame(update);
+    // Hazard & Collectible Logic
+    hazards.forEach((h, i) => {
+        h.x += h.vx || 0;
+        if (rectIntersect(player, h)) gameOver = true;
+    });
+
+    collectibles.forEach((c, i) => {
+        if (rectIntersect(player, c)) {
+            if (c.type === 'coin') { coins++; coinDisplay.innerText = coins; }
+            if (c.type === 'raygun') player.hasRaygun = true;
+            collectibles.splice(i, 1);
+        }
+    });
+
+    projectiles.forEach((p, i) => {
+        p.x += p.vx;
+        if (rectIntersect(p, boss) && boss.alive) {
+            boss.hp--;
+            projectiles.splice(i, 1);
+            if (boss.hp <= 0) { boss.alive = false; gameWin = true; }
+        }
+    });
+
+    if (player.y > canvas.height) gameOver = true;
+}
+
+function rectIntersect(r1, r2) {
+    return r1.x < r2.x + (r2.w || 10) && r1.x + (r1.w || 10) > r2.x && r1.y < r2.y + (r2.h || 10) && r1.y + (r1.h || 10) > r2.y;
 }
 
 function draw() {
-    ctx.fillStyle = "#111";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save(); ctx.translate(-cameraX, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    platforms.forEach(p => {
-        ctx.fillStyle = p.exit ? "#0f0" : (p.move ? "#0cf" : "#555");
-        ctx.fillRect(p.x, p.y, p.w, p.h);
-        if(p.gun && !player.hasGun) { ctx.fillStyle="#0cf"; ctx.fillRect(p.x+50, p.y-15, 20, 10); }
-        if(p.princess) { ctx.fillStyle="#f6c"; ctx.fillRect(p.x+40, p.y-40, 25, 40); }
-    });
-
-    ropes.forEach(r => { ctx.strokeStyle="#642"; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.x, r.y+r.h); ctx.stroke(); });
-    enemies.forEach(e => { if(!e.dead){ ctx.fillStyle="#0c0"; ctx.fillRect(e.x, e.y, 25, 20); }});
-    turrets.forEach(t => { ctx.fillStyle="#222"; ctx.fillRect(t.x, t.y, 30, 30); });
-    fireballs.forEach(f => { ctx.fillStyle="#f40"; ctx.beginPath(); ctx.arc(f.x, f.y+10, 8, 0, Math.PI*2); ctx.fill(); });
-    bullets.forEach(b => { ctx.fillStyle="#0cf"; ctx.fillRect(b.x, b.y, 15, 4); });
-
-    if (boss.active && boss.hp > 0) {
-        ctx.fillStyle = "#300"; ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
-        ctx.fillStyle = "#f00"; ctx.fillRect(boss.x+15, boss.y+20, 20, 20); ctx.fillRect(boss.x+55, boss.y+20, 20, 20);
+    // Draw Water for Screen 2
+    if (currentScreen === 2) {
+        ctx.fillStyle = '#0077be';
+        ctx.fillRect(100, 360, 600, 40);
     }
 
-    ctx.strokeStyle = player.hasGun ? "#0cf" : "#fff"; ctx.lineWidth = 3;
-    ctx.strokeRect(player.x+5, player.y-5, 10, 10);
-    ctx.beginPath(); ctx.moveTo(player.x+10, player.y+5); ctx.lineTo(player.x+10, player.y+25); ctx.stroke();
-    if(player.hasGun) { ctx.fillStyle="#0cf"; ctx.fillRect(player.x+18, player.y+12, 12, 6); }
+    // Draw Platforms
+    ctx.fillStyle = '#444';
+    platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
 
-    ctx.restore();
+    // Draw Hazards
+    hazards.forEach(h => {
+        ctx.fillStyle = h.type === 'fireball' ? 'orange' : 'green';
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, 8, 0, Math.PI*2);
+        ctx.fill();
+    });
 
-    document.getElementById('health').innerText = Math.max(0, Math.ceil(player.health));
-    document.getElementById('lives').innerText = player.lives;
-    document.getElementById('stage').innerText = stage;
-    if (stage === 5) document.getElementById('ui').innerHTML += `<br><span style="color:red">BOSS HP: ${boss.hp}</span>`;
+    // Draw Collectibles
+    collectibles.forEach(c => {
+        ctx.fillStyle = c.type === 'coin' ? 'gold' : 'blue';
+        ctx.fillRect(c.x, c.y, 15, 15);
+    });
 
-    if (player.lives <= 0) { ctx.fillStyle="red"; ctx.font="bold 40px Courier"; ctx.fillText("GAME OVER", 300, 200); }
-    if (boss.hp <= -1) { ctx.fillStyle="#ff0"; ctx.font="bold 30px Courier"; ctx.fillText("YOU SAVED THE PRINCESS!", 200, 200); }
+    // Draw Projectiles
+    ctx.fillStyle = 'cyan';
+    projectiles.forEach(p => ctx.fillRect(p.x, p.y, 10, 4));
+
+    // Draw Turret (Screen 1)
+    if (currentScreen === 1) {
+        ctx.fillStyle = 'black';
+        ctx.fillRect(365, 230, 20, 20);
+    }
+
+    // Draw Boss & Princess (Screen 4)
+    if (currentScreen === 4) {
+        if (boss.alive) {
+            ctx.fillStyle = 'purple';
+            ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
+        }
+        // Cage
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(700, 250, 50, 100);
+        ctx.fillStyle = 'pink'; // Princess
+        ctx.fillRect(715, 280, 20, 40);
+    }
+
+    // Draw Player (Stick Figure)
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    const {x, y, w, h} = player;
+    ctx.beginPath();
+    ctx.arc(x + w/2, y + 10, 8, 0, Math.PI*2); // Head
+    ctx.moveTo(x + w/2, y + 18); ctx.lineTo(x + w/2, y + 30); // Body
+    ctx.moveTo(x + w/2, y + 22); ctx.lineTo(x, y + 25); // Arms
+    ctx.moveTo(x + w/2, y + 22); ctx.lineTo(x + w, y + 25);
+    ctx.moveTo(x + w/2, y + 30); ctx.lineTo(x, y + 40); // Legs
+    ctx.moveTo(x + w/2, y + 30); ctx.lineTo(x + w, y + 40);
+    ctx.stroke();
+
+    if (player.hasRaygun) {
+        ctx.fillStyle = 'blue';
+        ctx.fillRect(player.x + 15, player.y + 20, 10, 5);
+    }
+
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0,0,800,400);
+        ctx.fillStyle = 'white';
+        ctx.fillText("GAME OVER - Press R to Restart", 300, 200);
+    }
+    if (gameWin) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0,0,800,400);
+        ctx.fillStyle = 'yellow';
+        ctx.fillText("YOU SAVED THE PRINCESS!", 300, 200);
+    }
 }
 
-setupStage(1);
-update();
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+window.addEventListener('keydown', e => {
+    if (e.code === 'KeyR' && (gameOver || gameWin)) {
+        gameOver = false; gameWin = false; coins = 0; coinDisplay.innerText = 0;
+        player.hasRaygun = false;
+        initScreen(1);
+    }
+});
+
+initScreen(1);
+gameLoop();
 </script>
 </body>
 </html>
