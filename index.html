@@ -2,22 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stumpy's Odyssey: The Final Rescue</title>
+    <title>Stumpy's Odyssey - Solid Start</title>
     <style>
         body { margin: 0; overflow: hidden; background: #050505; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: 'Courier New', Courier, monospace; }
-        canvas { border: 4px solid #333; box-shadow: 0 0 30px rgba(0,0,0,1); background: #000; }
+        canvas { border: 4px solid #444; background: #000; }
         #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 2px 2px 0px #000; font-weight: bold; }
-        .stat { color: #0f0; } .danger { color: #f00; } .power { color: #0cf; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    STAGE: <span id="stage" class="stat">1</span>/5 | 
-    LIVES: <span id="lives" class="danger">5</span><br>
-    HEALTH: <span id="health">100</span>% | 
-    FAIRIES: <span id="score" class="stat">0</span>
-    <div id="boss-ui" style="display:none;">BOSS HP: <span id="boss-hp" class="danger">5</span></div>
+    STAGE: <span id="stage">1</span>/5 | LIVES: <span id="lives">5</span><br>
+    HEALTH: <span id="health">100</span>% | FAIRIES: <span id="score">0</span>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -28,184 +24,158 @@ const ctx = canvas.getContext('2d');
 canvas.width = 800;
 canvas.height = 400;
 
-// --- AUDIO ENGINE ---
 let audioCtx = null;
 function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function playSfx(freq, type, dur, vol = 0.1, slide = 0) {
+function playSfx(f, t, d, v = 0.1) {
     if (!audioCtx) return;
-    const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-    osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    if (slide) osc.frequency.exponentialRampToValueAtTime(freq + slide, audioCtx.currentTime + dur);
-    gain.connect(audioCtx.destination); osc.connect(gain);
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + dur);
-    osc.start(); osc.stop(audioCtx.currentTime + dur);
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+    g.connect(audioCtx.destination); o.connect(g);
+    g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + d);
+    o.start(); o.stop(audioCtx.currentTime + d);
 }
 
-// --- GAME CONSTANTS ---
-const GRAVITY = 0.6;
-const JUMP_FORCE = -13;
-const SPEED = 5;
-
-// --- STATE ---
 let stage = 1;
-let player = { x: 50, y: 200, w: 20, h: 30, dx: 0, dy: 0, health: 100, lives: 5, score: 0, grounded: false, hasGun: false, plat: null };
+let player = { x: 50, y: 300, w: 20, h: 30, dx: 0, dy: 0, health: 100, lives: 5, score: 0, grounded: true, hasGun: false, plat: null };
 let boss = { x: 1200, y: 150, w: 90, h: 110, hp: 5, active: false };
 let platforms = [], turrets = [], enemies = [], fireballs = [], fairies = [], ropes = [], bullets = [];
 let cameraX = 0;
 
 function setupStage(s) {
-    // Reset state per stage
-    player.x = 60; player.y = 200; player.dy = 0; player.health = 100; player.hasGun = false;
-    fireballs = []; bullets = []; 
+    // Reset stage variables
+    fireballs = []; bullets = []; ropes = []; fairies = []; turrets = []; enemies = [];
     boss.active = (s === 5);
-    document.getElementById('boss-ui').style.display = (s === 5) ? 'block' : 'none';
+    boss.hp = 5;
 
-    if (s === 1) { // THE PLAINS
+    // Define Platforms first so we can spawn the player ON them
+    if (s === 1) {
         platforms = [
-            {x: 0, y: 320, w: 400, h: 80},
-            {x: 480, y: 240, w: 150, h: 20},
-            {x: 700, y: 320, w: 400, h: 80, exit: true}
+            {x: 0, y: 300, w: 400, h: 100}, // Huge starter block
+            {x: 450, y: 220, w: 150, h: 20},
+            {x: 700, y: 300, w: 400, h: 100, exit: true}
         ];
-        enemies = [{x: 800, y: 300, start: 800, range: 150, dir: 1}];
-        turrets = [{x: 500, y: 210}];
-        fairies = [{x: 550, y: 150}];
-    } else if (s === 2) { // THE FLOATING ISLES
+        enemies = [{x: 800, y: 280, start: 800, range: 150, dir: 1}];
+        turrets = [{x: 500, y: 190}];
+    } else if (s === 2) {
         platforms = [
-            {x: 0, y: 320, w: 150, h: 20},
-            {x: 200, y: 240, w: 150, h: 20},
-            {x: 400, y: 160, w: 150, h: 20},
-            {x: 650, y: 160, w: 120, h: 20},
-            {x: 850, y: 280, w: 300, h: 120, exit: true}
+            {x: 0, y: 300, w: 200, h: 100},
+            {x: 250, y: 220, w: 150, h: 20},
+            {x: 100, y: 140, w: 150, h: 20},
+            {x: 400, y: 100, w: 150, h: 20},
+            {x: 700, y: 280, w: 300, h: 120, exit: true}
         ];
-        enemies = [{x: 900, y: 260, start: 900, range: 100, dir: 1}];
-        turrets = [{x: 420, y: 130}, {x: 20, y: 290}];
-        fairies = [{x: 450, y: 80}];
-    } else if (s === 3) { // IRON WORKS (Moving)
+        turrets = [{x: 420, y: 70}];
+    } else if (s === 3) {
         platforms = [
-            {x: 0, y: 320, w: 150, h: 20},
-            {x: 250, y: 300, w: 150, h: 20, move: true, startX: 250, dist: 200, speed: 0.002, lastX: 250},
-            {x: 600, y: 220, w: 150, h: 20, move: true, startX: 600, dist: 150, speed: 0.004, lastX: 600},
-            {x: 950, y: 320, w: 400, h: 80, exit: true}
+            {x: 0, y: 300, w: 200, h: 100},
+            {x: 250, y: 280, w: 150, h: 20, move: true, startX: 250, dist: 200, speed: 0.002, lastX: 250},
+            {x: 600, y: 200, w: 150, h: 20, move: true, startX: 600, dist: 150, speed: 0.004, lastX: 600},
+            {x: 950, y: 300, w: 400, h: 100, exit: true}
         ];
-        turrets = [{x: 1000, y: 290}];
-        fairies = [{x: 650, y: 120}];
-    } else if (s === 4) { // THE DARK ASCENT
+    } else if (s === 4) {
         platforms = [
-            {x: 0, y: 320, w: 100, h: 20},
-            {x: 150, y: 240, w: 100, h: 20},
-            {x: 350, y: 240, w: 120, h: 20, move: true, startX: 350, dist: 100, speed: 0.005, lastX: 350},
-            {x: 600, y: 150, w: 150, h: 20},
-            {x: 850, y: 320, w: 400, h: 80, exit: true}
+            {x: 0, y: 300, w: 150, h: 100},
+            {x: 200, y: 220, w: 120, h: 20, move: true, startX: 200, dist: 150, speed: 0.005, lastX: 200},
+            {x: 550, y: 150, w: 150, h: 20},
+            {x: 850, y: 300, w: 400, h: 100, exit: true}
         ];
-        enemies = [{x: 900, y: 300, start: 900, range: 200, dir: 1}];
-        turrets = [{x: 620, y: 120}, {x: 160, y: 210}];
-    } else if (s === 5) { // THE THRONE ROOM
+    } else if (s === 5) {
         platforms = [
-            {x: 0, y: 320, w: 350, h: 80},
-            {x: 450, y: 320, w: 1000, h: 80},
-            {x: 50, y: 100, w: 120, h: 20, gun: true},
-            {x: 1300, y: 200, w: 100, h: 20, princess: true}
+            {x: 0, y: 300, w: 400, h: 100},
+            {x: 450, y: 300, w: 1000, h: 100},
+            {x: 50, y: 80, w: 120, h: 20, gun: true},
+            {x: 1300, y: 180, w: 100, h: 20, princess: true}
         ];
-        ropes = [{x: 100, y: 100, h: 220}];
-        enemies = []; turrets = [];
+        ropes = [{x: 100, y: 80, h: 220}];
     }
-    playSfx(200, 'sine', 0.4, 0.1, 300);
+
+    // MANDATORY SPAWN FIX: Set player Y exactly on the first platform
+    player.x = 60;
+    player.y = platforms[0].y - player.h;
+    player.dy = 0;
+    player.grounded = true;
+    player.health = 100;
+    player.hasGun = false;
+    player.plat = null;
+    
+    playSfx(200, 'sine', 0.2);
 }
 
-// --- INPUTS ---
 let keys = {};
 window.onkeydown = (e) => { initAudio(); keys[e.code] = true; if(e.code === 'KeyF' && player.hasGun) fire(); };
 window.onkeyup = (e) => keys[e.code] = false;
 
 function fire() {
-    bullets.push({x: player.x + 20, y: player.y + 10, dx: 10});
-    playSfx(1200, 'sine', 0.1, 0.1, -400);
+    bullets.push({x: player.x + 20, y: player.y + 10, dx: 12});
+    playSfx(1000, 'sine', 0.05);
 }
 
-// --- CORE LOOP ---
 function update() {
     if (player.lives <= 0 || (stage === 5 && boss.hp === -1)) return;
 
-    // Movement logic
-    if (keys['ArrowRight'] || keys['KeyD']) player.dx = SPEED;
-    else if (keys['ArrowLeft'] || keys['KeyA']) player.dx = -SPEED;
+    if (keys['ArrowRight'] || keys['KeyD']) player.dx = 5;
+    else if (keys['ArrowLeft'] || keys['KeyA']) player.dx = -5;
     else player.dx = 0;
 
     let climbing = ropes.some(r => player.x+10 > r.x-20 && player.x+10 < r.x+20 && player.y < r.y+r.h && player.y+player.h > r.y);
     if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW'])) {
         if (climbing) { player.y -= 5; player.dy = 0; }
-        else if (player.grounded) { player.dy = JUMP_FORCE; player.grounded = false; playSfx(150, 'square', 0.1); }
+        else if (player.grounded) { player.dy = -14; player.grounded = false; playSfx(150, 'square', 0.1); }
     }
 
-    // Velocity Inheritance (Moving Platforms)
     if (player.plat) { player.x += (player.plat.x - player.plat.lastX); }
 
     player.x += player.dx;
-    if (!climbing) { player.dy += GRAVITY; player.y += player.dy; }
+    if (!climbing) { player.dy += 0.7; player.y += player.dy; }
     player.grounded = false;
     player.plat = null;
 
     cameraX = Math.max(0, player.x - 200);
 
-    // Collision: Platforms
     platforms.forEach(p => {
-        if (p.move) { 
-            p.lastX = p.x; 
-            p.x = p.startX + Math.sin(Date.now() * p.speed) * p.dist; 
-        }
-        if (player.x < p.x + p.w && player.x + player.w > p.x && player.y + player.h > p.y && player.y + player.h < p.y + player.dy + 12) {
+        if (p.move) { p.lastX = p.x; p.x = p.startX + Math.sin(Date.now() * p.speed) * p.dist; }
+        if (player.x < p.x + p.w && player.x + player.w > p.x && player.y + player.h > p.y && player.y + player.h < p.y + player.dy + 15) {
             player.dy = 0; player.y = p.y - player.h; player.grounded = true;
             player.plat = p;
-            if (p.exit) { stage++; setupStage(stage); }
-            if (p.gun && !player.hasGun) { player.hasGun = true; playSfx(800, 'sawtooth', 0.3); }
-            if (p.princess && boss.hp <= 0) { boss.hp = -1; playSfx(500, 'sine', 1, 0.2, 500); }
+            if (p.exit) { stage++; if(stage <= 5) setupStage(stage); }
+            if (p.gun && !player.hasGun) { player.hasGun = true; playSfx(600, 'sawtooth', 0.3); }
+            if (p.princess && boss.hp <= 0) { boss.hp = -1; playSfx(500, 'sine', 1); }
         }
     });
 
-    // Enemies & Turrets
     enemies.forEach(e => {
         if (e.dead) return;
         e.x += e.dir * 2;
         if (Math.abs(e.x - e.start) > e.range) e.dir *= -1;
-        if (player.x < e.x + 25 && player.x + player.w > e.x && player.y + player.h > e.y && player.y + player.h < e.y + 15 && player.dy > 0) {
-            e.dead = true; player.dy = -8; playSfx(400, 'square', 0.1);
-        } else if (Math.hypot(player.x - e.x, player.y - e.y) < 25) { player.health -= 2; }
+        if (Math.hypot(player.x - e.x, player.y - e.y) < 25) { player.health -= 2; }
     });
 
     let now = Date.now();
     turrets.forEach(t => {
         if (now - (t.last || 0) > 2000 && Math.abs(player.x - t.x) < 500) {
             fireballs.push({ x: t.x, y: t.y, dx: -6 });
-            t.last = now; playSfx(80, 'sawtooth', 0.1, 0.05);
+            t.last = now;
         }
     });
 
     fireballs.forEach((f, i) => {
         f.x += f.dx;
         if (f.x < player.x + player.w && f.x + 10 > player.x && f.y < player.y + player.h && f.y + 10 > player.y) {
-            player.health -= 25; fireballs.splice(i, 1); playSfx(60, 'sawtooth', 0.2);
+            player.health -= 25; fireballs.splice(i, 1);
         }
     });
 
-    // Boss Combat
     if (boss.active && boss.hp > 0) {
-        boss.y = 120 + Math.sin(now / 400) * 80;
+        boss.y = 100 + Math.sin(now / 400) * 80;
         if (now % 60 < 10) fireballs.push({ x: boss.x, y: boss.y + 50, dx: -8 });
         bullets.forEach((b, i) => {
             if (b.x > boss.x && b.x < boss.x + boss.w && b.y > boss.y && b.y < boss.y + boss.h) {
-                boss.hp--; bullets.splice(i, 1); playSfx(100, 'square', 0.1, 0.2);
+                boss.hp--; bullets.splice(i, 1); playSfx(100, 'square', 0.1);
             }
         });
     }
     bullets.forEach(b => b.x += b.dx);
 
-    fairies.forEach(f => {
-        if (!f.collected && Math.hypot(player.x - f.x, player.y - f.y) < 30) {
-            f.collected = true; player.score++; player.health = Math.min(100, player.health + 20); playSfx(1100, 'sine', 0.2);
-        }
-    });
-
-    // Death / Fail
     if (player.y > 450 || player.health <= 0) {
         player.lives--;
         if (player.lives > 0) setupStage(stage);
@@ -216,16 +186,12 @@ function update() {
 }
 
 function draw() {
-    // Parallax Sky
-    let skyColors = ["#1a2a6c", "#0f0c29", "#111", "#200", "#000"];
-    ctx.fillStyle = skyColors[stage-1];
+    ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     ctx.save(); ctx.translate(-cameraX, 0);
 
-    // Platforms
     platforms.forEach(p => {
-        ctx.fillStyle = p.exit ? "#0f0" : (p.move ? "#0cf" : "#444");
+        ctx.fillStyle = p.exit ? "#0f0" : (p.move ? "#0cf" : "#555");
         ctx.fillRect(p.x, p.y, p.w, p.h);
         if(p.gun && !player.hasGun) { ctx.fillStyle="#0cf"; ctx.fillRect(p.x+50, p.y-15, 20, 10); }
         if(p.princess) { ctx.fillStyle="#f6c"; ctx.fillRect(p.x+40, p.y-40, 25, 40); }
@@ -236,31 +202,26 @@ function draw() {
     turrets.forEach(t => { ctx.fillStyle="#222"; ctx.fillRect(t.x, t.y, 30, 30); });
     fireballs.forEach(f => { ctx.fillStyle="#f40"; ctx.beginPath(); ctx.arc(f.x, f.y+10, 8, 0, Math.PI*2); ctx.fill(); });
     bullets.forEach(b => { ctx.fillStyle="#0cf"; ctx.fillRect(b.x, b.y, 15, 4); });
-    fairies.forEach(f => { if(!f.collected) { ctx.fillStyle="#ff0"; ctx.beginPath(); ctx.arc(f.x, f.y, 8, 0, Math.PI*2); ctx.fill(); }});
 
     if (boss.active && boss.hp > 0) {
         ctx.fillStyle = "#300"; ctx.fillRect(boss.x, boss.y, boss.w, boss.h);
         ctx.fillStyle = "#f00"; ctx.fillRect(boss.x+15, boss.y+20, 20, 20); ctx.fillRect(boss.x+55, boss.y+20, 20, 20);
     }
 
-    // Player (Stumpy)
     ctx.strokeStyle = player.hasGun ? "#0cf" : "#fff"; ctx.lineWidth = 3;
-    ctx.strokeRect(player.x+5, player.y-5, 10, 10); // Head
-    ctx.beginPath(); ctx.moveTo(player.x+10, player.y+5); ctx.lineTo(player.x+10, player.y+25); ctx.stroke(); // Body
+    ctx.strokeRect(player.x+5, player.y-5, 10, 10);
+    ctx.beginPath(); ctx.moveTo(player.x+10, player.y+5); ctx.lineTo(player.x+10, player.y+25); ctx.stroke();
     if(player.hasGun) { ctx.fillStyle="#0cf"; ctx.fillRect(player.x+18, player.y+12, 12, 6); }
 
     ctx.restore();
 
-    // UI Refresh
     document.getElementById('health').innerText = Math.max(0, Math.ceil(player.health));
-    document.getElementById('score').innerText = player.score;
     document.getElementById('lives').innerText = player.lives;
     document.getElementById('stage').innerText = stage;
-    document.getElementById('boss-hp').innerText = Math.max(0, boss.hp);
+    if (stage === 5) document.getElementById('ui').innerHTML += `<br><span style="color:red">BOSS HP: ${boss.hp}</span>`;
 
     if (player.lives <= 0) { ctx.fillStyle="red"; ctx.font="bold 40px Courier"; ctx.fillText("GAME OVER", 300, 200); }
     if (boss.hp <= -1) { ctx.fillStyle="#ff0"; ctx.font="bold 30px Courier"; ctx.fillText("YOU SAVED THE PRINCESS!", 200, 200); }
-    if (player.hasGun && boss.hp > 0) { ctx.fillStyle="#0cf"; ctx.fillText("PRESS 'F' TO SHOOT", 320, 40); }
 }
 
 setupStage(1);
