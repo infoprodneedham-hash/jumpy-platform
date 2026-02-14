@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman Hero: Boss Stalker Edition</title>
+    <title>Stickman Hero: SFX Edition</title>
     <style>
         body { margin: 0; background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
-        canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); cursor: pointer; }
         #ui { width: 800px; display: flex; justify-content: space-between; padding: 10px; font-weight: bold; background: rgba(0,0,0,0.5); }
         #instructions { width: 800px; text-align: center; padding: 10px; background: #333; font-size: 14px; border-top: 2px solid #555; }
         .key { background: #eee; color: #000; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        #start-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; text-shadow: 2px 2px black; font-size: 20px; }
     </style>
 </head>
 <body>
@@ -21,12 +22,44 @@
     <div id="instructions">
         Controls: <span id="controlText">Arrows to Move | Space to Jump</span>
     </div>
+    <div id="start-hint">Click Screen to Enable Sound</div>
 
 <script>
+// --- AUDIO ENGINE ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, type, duration, vol = 0.1) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + duration);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+const sfx = {
+    jump: () => playSound(400, 'square', 0.1),
+    spring: () => playSound(600, 'sine', 0.4),
+    coin: () => playSound(900, 'sine', 0.2, 0.05),
+    hit: () => playSound(150, 'sawtooth', 0.3),
+    laser: () => playSound(800, 'sawtooth', 0.15, 0.05),
+    bossHit: () => playSound(60, 'square', 0.4, 0.2)
+};
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 800;
 canvas.height = 400;
+
+canvas.addEventListener('mousedown', () => {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    document.getElementById('start-hint').style.display = 'none';
+});
 
 let currentScreen = 1;
 let coins = 0;
@@ -66,9 +99,11 @@ window.addEventListener('keydown', e => {
             player.vy = player.jumpPower;
             player.grounded = false;
             player.canDoubleJump = true;
+            sfx.jump();
         } else if (player.canDoubleJump) {
             player.vy = player.jumpPower;
             player.canDoubleJump = false;
+            sfx.jump();
         }
     }
     if (e.code === 'KeyB' && currentScreen === 2) {
@@ -76,12 +111,12 @@ window.addEventListener('keydown', e => {
             player.attached = false;
             player.vx = (Math.cos(player.ropeAngle) < 0) ? -8 : 8;
             player.vy = -4;
+            sfx.jump();
         } else {
-            // Tightened Rope Check
             let ropeEndX = player.ropeAnchor.x + Math.cos(player.ropeAngle) * player.ropeLength;
             let ropeEndY = player.ropeAnchor.y + Math.sin(player.ropeAngle) * player.ropeLength;
             let dist = Math.sqrt(Math.pow((player.x + player.w/2) - ropeEndX, 2) + Math.pow((player.y + player.h/2) - ropeEndY, 2));
-            if (dist < 40) player.attached = true;
+            if (dist < 45) { player.attached = true; sfx.coin(); }
         }
     }
     keys[e.code] = true;
@@ -91,10 +126,10 @@ window.addEventListener('keyup', e => keys[e.code] = false);
 function updateInstructions() {
     const text = document.getElementById('controlText');
     const base = "Arrows to Move | Space (Double) Jump";
-    if (currentScreen === 1) text.innerHTML = base + " | Spring to reach coins!";
-    if (currentScreen === 2) text.innerHTML = base + " | Get close and press <span class='key'>B</span> to Grab";
-    if (currentScreen === 3) text.innerHTML = base + " | Avoid the tracking Drone!";
-    if (currentScreen === 4) text.innerHTML = base + " | Boss Stalks you! Shoot with <span class='key'>F</span>";
+    if (currentScreen === 1) text.innerHTML = base + " | Use Springs!";
+    if (currentScreen === 2) text.innerHTML = base + " | Touch rope tip + <span class='key'>B</span>";
+    if (currentScreen === 3) text.innerHTML = base + " | Dodge the Drone!";
+    if (currentScreen === 4) text.innerHTML = base + " | Boss Stalks! Shoot with <span class='key'>F</span>";
 }
 
 function initScreen(num) {
@@ -132,6 +167,7 @@ function initScreen(num) {
 
 function handleDeath() {
     if (invulnFrames > 0) return;
+    sfx.hit();
     lives--;
     document.getElementById('lives').innerText = lives;
     if (lives <= 0) gameOver = true;
@@ -142,7 +178,6 @@ function update() {
     if (gameOver || gameWin) return;
     if (invulnFrames > 0) invulnFrames--;
 
-    // Update Rope Swing Angle even if not attached so player can time the grab
     player.ropeAngle = Math.PI/2 + Math.sin(Date.now() / 500) * 1.1;
 
     if (player.attached) {
@@ -168,6 +203,7 @@ function update() {
     springs.forEach(s => {
         if (player.x + player.w > s.x && player.x < s.x + s.w && player.y + player.h >= s.y && player.y + player.h <= s.y + player.vy + 10) {
             player.vy = -16; player.grounded = false;
+            sfx.spring();
         }
     });
 
@@ -180,58 +216,56 @@ function update() {
         if (turretTimer >= 180) {
             hazards.push({x: 400, y: 165, vx: 5, w: 12, h: 12, type: 'fireball'}, {x: 400, y: 165, vx: -5, w: 12, h: 12, type: 'fireball'});
             turretTimer = 0;
+            sfx.laser();
         }
     }
     if (currentScreen === 3) {
         hazards.forEach(h => { if (h.type === 'alien_drone') { h.x += (player.x - h.x) * 0.015; h.y += (player.y - h.y) * 0.015; } });
     }
 
-    // BOSS LOGIC (SCREEN 4)
     if (currentScreen === 4 && boss.alive) {
-        // Move slowly toward player
         let dir = player.x < boss.x ? -0.8 : 0.8;
         boss.x += dir;
-        
-        // Shoot every 3 seconds
         boss.shootTimer++;
         if (boss.shootTimer >= 180) {
             let bDir = player.x < boss.x ? -6 : 6;
             hazards.push({x: boss.x + boss.w/2, y: boss.y + 30, vx: bDir, w: 15, h: 10, type: 'boss_bolt'});
             boss.shootTimer = 0;
+            sfx.laser();
         }
-
-        // Death on contact
         if (rectIntersect(player, boss)) handleDeath();
     }
 
     if (currentScreen === 4 && player.hasRaygun && keys['KeyF']) {
-        if (projectiles.length < 1) { projectiles.push({x: player.x + 20, y: player.y + 15, vx: 10, w: 15, h: 5}); keys['KeyF'] = false; }
+        if (projectiles.length < 2) { 
+            projectiles.push({x: player.x + 20, y: player.y + 15, vx: 10, w: 15, h: 5}); 
+            sfx.laser();
+            keys['KeyF'] = false; 
+        }
     }
 
-    // Hazards
     for (let i = hazards.length - 1; i >= 0; i--) {
-        let h = hazards[i];
-        h.x += h.vx || 0;
+        let h = hazards[i]; h.x += h.vx || 0;
         if (rectIntersect(player, h)) { handleDeath(); hazards.splice(i, 1); continue; }
         if (h.x < -50 || h.x > 850) hazards.splice(i, 1);
     }
 
-    // Coins
     for (let i = collectibles.length - 1; i >= 0; i--) {
         if (rectIntersect(player, collectibles[i])) {
-            if (collectibles[i].type === 'coin') { coins++; document.getElementById('coinCount').innerText = coins; }
-            if (collectibles[i].type === 'raygun') player.hasRaygun = true;
+            if (collectibles[i].type === 'coin') { coins++; document.getElementById('coinCount').innerText = coins; sfx.coin(); }
+            if (collectibles[i].type === 'raygun') { player.hasRaygun = true; sfx.coin(); }
             collectibles.splice(i, 1);
         }
     }
 
-    // Player Bullets
     projectiles.forEach((p, i) => {
         p.x += p.vx;
         if (boss.alive && rectIntersect(p, boss)) {
             boss.hp--; projectiles.splice(i, 1);
+            sfx.bossHit();
             if (boss.hp <= 0) { boss.alive = false; gameWin = true; }
         }
+        if (p.x > 850) projectiles.splice(i, 1);
     });
 }
 
@@ -250,9 +284,7 @@ function draw() {
     ctx.fillStyle = '#ff3333'; springs.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
     
     hazards.forEach(h => {
-        if (h.type === 'fireball') ctx.fillStyle = '#ff4500';
-        else if (h.type === 'boss_bolt') ctx.fillStyle = '#ff00ff';
-        else ctx.fillStyle = '#32cd32';
+        ctx.fillStyle = h.type === 'fireball' ? '#ff4500' : (h.type === 'boss_bolt' ? '#ff00ff' : '#32cd32');
         ctx.beginPath(); ctx.arc(h.x, h.y, 8, 0, Math.PI*2); ctx.fill();
     });
 
@@ -262,12 +294,10 @@ function draw() {
     });
 
     if (currentScreen === 1) { ctx.fillStyle = 'black'; ctx.fillRect(390, 160, 20, 20); ctx.fillRect(380, 165, 40, 8); }
-    
     if (currentScreen === 4) {
         if (boss.alive) { 
             ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); 
             ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5); 
-            // Boss Eye
             ctx.fillStyle = 'white'; ctx.fillRect(boss.x + (player.x < boss.x ? 5 : 40), boss.y + 15, 15, 15);
         }
         ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100); ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40);
@@ -283,17 +313,11 @@ function draw() {
         if (player.hasRaygun) { ctx.fillStyle = 'blue'; ctx.fillRect(x+12, y+18, 12, 5); }
     }
 
-    if (gameOver) { 
+    if (gameOver || gameWin) { 
         ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400); 
         ctx.fillStyle='white'; ctx.textAlign="center"; ctx.font="24px Arial";
-        ctx.fillText("GAME OVER", 400, 180); ctx.font="18px Arial"; ctx.fillText("PRESS R TO RESTART", 400, 220); 
-    }
-    if (gameWin) { 
-        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(0,0,800,400); 
-        ctx.fillStyle='black'; ctx.textAlign="center"; ctx.font="30px Arial";
-        ctx.fillText("PRINCESS SAVED!", 400, 160); 
-        ctx.font="24px Arial"; ctx.fillText("FINAL SCORE: " + coins + " GOLD", 400, 210);
-        ctx.font="16px Arial"; ctx.fillText("PRESS R TO PLAY AGAIN", 400, 260);
+        ctx.fillText(gameOver ? "GAME OVER" : "VICTORY! FINAL SCORE: " + coins, 400, 200);
+        ctx.font="16px Arial"; ctx.fillText("PRESS R TO RESTART", 400, 240);
     }
 }
 
