@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman Quest: Double Jump & Rope Master</title>
+    <title>Stickman Hero: Final Boss Battle</title>
     <style>
-        body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        body { margin: 0; background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
         canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        #ui { position: absolute; top: 15px; color: #000; font-weight: bold; width: 770px; display: flex; justify-content: space-between; pointer-events: none; text-shadow: 1px 1px white; }
+        #ui { width: 800px; display: flex; justify-content: space-between; padding: 10px; font-weight: bold; background: rgba(0,0,0,0.5); }
+        #instructions { width: 800px; text-align: center; padding: 10px; background: #333; font-size: 14px; border-top: 2px solid #555; }
+        .key { background: #eee; color: #000; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -16,6 +18,9 @@
         <div>LEVEL: <span id="screenNum">1</span></div>
     </div>
     <canvas id="gameCanvas"></canvas>
+    <div id="instructions">
+        Controls: <span id="controlText">Arrows to Move | Space to Jump</span>
+    </div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
@@ -56,8 +61,7 @@ let turretTimer = 0;
 
 const keys = {};
 window.addEventListener('keydown', e => {
-    // Jump Logic
-    if (e.code === 'Space' && !player.attached) {
+    if (e.code === 'Space' && !player.attached && !gameOver && !gameWin) {
         if (player.grounded) {
             player.vy = player.jumpPower;
             player.grounded = false;
@@ -67,11 +71,10 @@ window.addEventListener('keydown', e => {
             player.canDoubleJump = false;
         }
     }
-    // Rope Logic
     if (e.code === 'KeyB' && currentScreen === 2) {
         if (player.attached) {
             player.attached = false;
-            player.vx = (Math.cos(player.ropeAngle) < 0) ? -8 : 8; // Launch
+            player.vx = (Math.cos(player.ropeAngle) < 0) ? -8 : 8;
             player.vy = -4;
         } else {
             let dx = (player.x + player.w/2) - player.ropeAnchor.x;
@@ -84,9 +87,19 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
 
+function updateInstructions() {
+    const text = document.getElementById('controlText');
+    const base = "Arrows to Move | Space (Double) Jump";
+    if (currentScreen === 1) text.innerHTML = base + " | Use the Red Spring to reach coins!";
+    if (currentScreen === 2) text.innerHTML = base + " | Press <span class='key'>B</span> to Grab/Release Rope";
+    if (currentScreen === 3) text.innerHTML = base + " | Dodge the Alien Drone!";
+    if (currentScreen === 4) text.innerHTML = base + " | Spring to platform! Press <span class='key'>F</span> to Shoot";
+}
+
 function initScreen(num) {
     currentScreen = num;
     document.getElementById('screenNum').innerText = num;
+    updateInstructions();
     platforms = []; hazards = []; collectibles = []; projectiles = []; springs = [];
     player.vx = 0; player.vy = 0; player.attached = false;
     
@@ -95,22 +108,23 @@ function initScreen(num) {
         platforms.push({x: 0, y: 350, w: 800, h: 50}); 
         platforms.push({x: 325, y: 180, w: 150, h: 20});
         springs.push({x: 250, y: 335, w: 40, h: 15});
-        collectibles.push({x: 350, y: 140, type: 'coin'}, {x: 400, y: 140, type: 'coin'}, {x: 450, y: 140, type: 'coin'});
+        collectibles.push({x: 350, y: 140, w: 15, h: 15, type: 'coin'}, {x: 400, y: 140, w: 15, h: 15, type: 'coin'}, {x: 450, y: 140, w: 15, h: 15, type: 'coin'});
     } else if (num === 2) {
-        player.x = 20; player.y = 310; // Start far left
+        player.x = 20; player.y = 310;
         platforms.push({x: 0, y: 350, w: 120, h: 50}, {x: 680, y: 350, w: 120, h: 50});
-        collectibles.push({x: 250, y: 200, type: 'coin'}, {x: 400, y: 160, type: 'coin'}, {x: 550, y: 200, type: 'coin'});
+        collectibles.push({x: 250, y: 200, w: 15, h: 15, type: 'coin'}, {x: 400, y: 160, w: 15, h: 15, type: 'coin'}, {x: 550, y: 200, w: 15, h: 15, type: 'coin'});
     } else if (num === 3) {
         player.x = 30; player.y = 310;
         platforms.push({x: 0, y: 350, w: 120, h: 50}, {x: 680, y: 350, w: 120, h: 50});
         platforms.push({x: 300, y: 280, w: 150, h: 20, moving: true, range: 150, startX: 300});
         hazards.push({x: 500, y: 100, type: 'alien_drone', w: 25, h: 25});
-        collectibles.push({x: 350, y: 240, type: 'coin'}, {x: 400, y: 240, type: 'coin'});
+        collectibles.push({x: 350, y: 240, w: 15, h: 15, type: 'coin'}, {x: 400, y: 240, w: 15, h: 15, type: 'coin'});
     } else if (num === 4) {
         player.x = 30; player.y = 310;
-        platforms.push({x: 0, y: 350, w: 800, h: 50});
-        platforms.push({x: 50, y: 150, w: 100, h: 20});
-        collectibles.push({x: 80, y: 110, type: 'raygun'});
+        platforms.push({x: 0, y: 350, w: 800, h: 50}); // Floor
+        platforms.push({x: 50, y: 180, w: 120, h: 20}); // Gun Platform
+        springs.push({x: 80, y: 335, w: 40, h: 15}); // Spring board to reach gun!
+        collectibles.push({x: 100, y: 140, w: 25, h: 12, type: 'raygun'});
     }
 }
 
@@ -119,10 +133,7 @@ function handleDeath() {
     lives--;
     document.getElementById('lives').innerText = lives;
     if (lives <= 0) gameOver = true;
-    else {
-        invulnFrames = 60;
-        initScreen(currentScreen);
-    }
+    else { invulnFrames = 60; initScreen(currentScreen); }
 }
 
 function update() {
@@ -137,30 +148,23 @@ function update() {
         if (keys['ArrowLeft']) player.vx = -player.speed;
         else if (keys['ArrowRight']) player.vx = player.speed;
         else player.vx *= friction;
-        
         player.vy += gravity;
         player.x += player.vx;
         player.y += player.vy;
     }
 
-    // Collisions
     player.grounded = false;
     platforms.forEach(p => {
         if (p.moving) p.x = p.startX + Math.sin(Date.now() / 600) * p.range;
         if (player.vy >= 0 && player.x + player.w > p.x && player.x < p.x + p.w &&
             player.y + player.h >= p.y && player.y + player.h <= p.y + player.vy + 10) {
-                player.y = p.y - player.h;
-                player.vy = 0;
-                player.grounded = true;
-                player.canDoubleJump = false;
+                player.y = p.y - player.h; player.vy = 0; player.grounded = true; player.canDoubleJump = false;
         }
     });
 
     springs.forEach(s => {
-        if (player.x + player.w > s.x && player.x < s.x + s.w &&
-            player.y + player.h >= s.y && player.y + player.h <= s.y + player.vy + 10) {
-                player.vy = -16;
-                player.grounded = false;
+        if (player.x + player.w > s.x && player.x < s.x + s.w && player.y + player.h >= s.y && player.y + player.h <= s.y + player.vy + 10) {
+            player.vy = -16; player.grounded = false;
         }
     });
 
@@ -171,37 +175,25 @@ function update() {
     if (currentScreen === 1) {
         turretTimer++;
         if (turretTimer >= 180) {
-            hazards.push({x: 400, y: 165, vx: 5, w: 12, h: 12, type: 'fireball'}, 
-                         {x: 400, y: 165, vx: -5, w: 12, h: 12, type: 'fireball'});
+            hazards.push({x: 400, y: 165, vx: 5, w: 12, h: 12, type: 'fireball'}, {x: 400, y: 165, vx: -5, w: 12, h: 12, type: 'fireball'});
             turretTimer = 0;
         }
     }
-
     if (currentScreen === 3) {
-        hazards.forEach(h => {
-            if (h.type === 'alien_drone') {
-                h.x += (player.x - h.x) * 0.015;
-                h.y += (player.y - h.y) * 0.015;
-            }
-        });
+        hazards.forEach(h => { if (h.type === 'alien_drone') { h.x += (player.x - h.x) * 0.015; h.y += (player.y - h.y) * 0.015; } });
     }
-
     if (currentScreen === 4 && player.hasRaygun && keys['KeyF']) {
-        if (projectiles.length < 1) {
-            projectiles.push({x: player.x + 20, y: player.y + 15, vx: 10, w: 15, h: 5});
-            keys['KeyF'] = false; 
-        }
+        if (projectiles.length < 1) { projectiles.push({x: player.x + 20, y: player.y + 15, vx: 10, w: 15, h: 5}); keys['KeyF'] = false; }
     }
 
     hazards.forEach(h => { if (rectIntersect(player, h)) handleDeath(); });
-    
-    collectibles.forEach((c, i) => {
-        if (rectIntersect(player, c)) {
-            if (c.type === 'coin') { coins++; document.getElementById('coinCount').innerText = coins; }
-            if (c.type === 'raygun') player.hasRaygun = true;
+    for (let i = collectibles.length - 1; i >= 0; i--) {
+        if (rectIntersect(player, collectibles[i])) {
+            if (collectibles[i].type === 'coin') { coins++; document.getElementById('coinCount').innerText = coins; }
+            if (collectibles[i].type === 'raygun') player.hasRaygun = true;
             collectibles.splice(i, 1);
         }
-    });
+    }
 
     projectiles.forEach((p, i) => {
         p.x += p.vx;
@@ -223,16 +215,12 @@ function rectIntersect(r1, r2) {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     if (currentScreen === 2) {
         ctx.fillStyle = '#0077be'; ctx.fillRect(120, 365, 560, 35);
-        ctx.strokeStyle = '#553311'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(400, 0);
+        ctx.strokeStyle = '#553311'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(400, 0);
         let angle = player.attached ? player.ropeAngle : (Math.PI/2 + Math.sin(Date.now() / 500) * 1.1);
-        ctx.lineTo(400 + Math.cos(angle)*player.ropeLength, Math.sin(angle)*player.ropeLength);
-        ctx.stroke();
+        ctx.lineTo(400 + Math.cos(angle)*player.ropeLength, Math.sin(angle)*player.ropeLength); ctx.stroke();
     }
-
     ctx.fillStyle = '#444'; platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
     ctx.fillStyle = '#ff3333'; springs.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
     hazards.forEach(h => {
@@ -241,31 +229,36 @@ function draw() {
     });
     collectibles.forEach(c => {
         ctx.fillStyle = c.type === 'coin' ? 'gold' : 'blue';
-        ctx.beginPath(); ctx.arc(c.x+7, c.y+7, 7, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(c.x+c.w/2, c.y+c.h/2, 7, 0, Math.PI*2); ctx.fill();
     });
-
     if (currentScreen === 1) { ctx.fillStyle = 'black'; ctx.fillRect(390, 160, 20, 20); ctx.fillRect(380, 165, 40, 8); }
     if (currentScreen === 4) {
-        if (boss.alive) { ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5); }
+        if (boss.alive) { 
+            ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); 
+            ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5); 
+        }
         ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100); ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40);
     }
-
     ctx.fillStyle = 'cyan'; projectiles.forEach(p => ctx.fillRect(p.x, p.y, 15, 5));
-
     if (invulnFrames % 10 < 5) {
-        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-        const {x, y} = player;
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; const {x, y} = player;
         ctx.beginPath(); ctx.arc(x+10, y+8, 7, 0, Math.PI*2); 
-        ctx.moveTo(x+10, y+15); ctx.lineTo(x+10, y+30);
-        ctx.moveTo(x, y+22); ctx.lineTo(x+20, y+22);
-        ctx.moveTo(x+10, y+30); ctx.lineTo(x, y+40);
-        ctx.moveTo(x+10, y+30); ctx.lineTo(x+20, y+40);
-        ctx.stroke();
+        ctx.moveTo(x+10, y+15); ctx.lineTo(x+10, y+30); ctx.moveTo(x, y+22); ctx.lineTo(x+20, y+22);
+        ctx.moveTo(x+10, y+30); ctx.lineTo(x, y+40); ctx.moveTo(x+10, y+30); ctx.lineTo(x+20, y+40); ctx.stroke();
         if (player.hasRaygun) { ctx.fillStyle = 'blue'; ctx.fillRect(x+12, y+18, 12, 5); }
     }
-
-    if (gameOver) { ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400); ctx.fillStyle='white'; ctx.textAlign="center"; ctx.fillText("OUT OF LIVES - PRESS R", 400, 200); }
-    if (gameWin) { ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(0,0,800,400); ctx.fillStyle='black'; ctx.textAlign="center"; ctx.fillText("VICTORY!", 400, 200); }
+    if (gameOver) { 
+        ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400); 
+        ctx.fillStyle='white'; ctx.textAlign="center"; ctx.font="24px Arial";
+        ctx.fillText("GAME OVER", 400, 180); ctx.font="18px Arial"; ctx.fillText("PRESS R TO RESTART", 400, 220); 
+    }
+    if (gameWin) { 
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(0,0,800,400); 
+        ctx.fillStyle='black'; ctx.textAlign="center"; ctx.font="30px Arial";
+        ctx.fillText("PRINCESS SAVED!", 400, 160); 
+        ctx.font="24px Arial"; ctx.fillText("FINAL SCORE: " + coins + " GOLD", 400, 210);
+        ctx.font="16px Arial"; ctx.fillText("PRESS R TO PLAY AGAIN", 400, 260);
+    }
 }
 
 function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
