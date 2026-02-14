@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman Hero: Spring Jump Edition</title>
+    <title>Stickman Quest: Double Jump & Rope Master</title>
     <style>
         body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
@@ -38,10 +38,11 @@ const player = {
     vx: 0, vy: 0,
     speed: 5, jumpPower: -10,
     grounded: false,
+    canDoubleJump: false,
     hasRaygun: false,
     attached: false,
-    ropeAngle: Math.PI / 4,
-    ropeLength: 180,
+    ropeAngle: 0,
+    ropeLength: 220,
     ropeAnchor: { x: 400, y: 0 }
 };
 
@@ -49,12 +50,38 @@ let platforms = [];
 let hazards = [];
 let collectibles = [];
 let projectiles = [];
-let springs = []; // New Spring Boards
+let springs = [];
 let boss = { x: 620, y: 270, w: 60, h: 80, hp: 3, alive: true };
 let turretTimer = 0;
 
 const keys = {};
-window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keydown', e => {
+    // Jump Logic
+    if (e.code === 'Space' && !player.attached) {
+        if (player.grounded) {
+            player.vy = player.jumpPower;
+            player.grounded = false;
+            player.canDoubleJump = true;
+        } else if (player.canDoubleJump) {
+            player.vy = player.jumpPower;
+            player.canDoubleJump = false;
+        }
+    }
+    // Rope Logic
+    if (e.code === 'KeyB' && currentScreen === 2) {
+        if (player.attached) {
+            player.attached = false;
+            player.vx = (Math.cos(player.ropeAngle) < 0) ? -8 : 8; // Launch
+            player.vy = -4;
+        } else {
+            let dx = (player.x + player.w/2) - player.ropeAnchor.x;
+            let dy = (player.y + player.h/2) - player.ropeAnchor.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 260) player.attached = true;
+        }
+    }
+    keys[e.code] = true;
+});
 window.addEventListener('keyup', e => keys[e.code] = false);
 
 function initScreen(num) {
@@ -66,20 +93,19 @@ function initScreen(num) {
     if (num === 1) {
         player.x = 50; player.y = 310;
         platforms.push({x: 0, y: 350, w: 800, h: 50}); 
-        platforms.push({x: 325, y: 180, w: 150, h: 20}); // Raised platform for turret/coins
-        // Spring board to reach the platform
+        platforms.push({x: 325, y: 180, w: 150, h: 20});
         springs.push({x: 250, y: 335, w: 40, h: 15});
         collectibles.push({x: 350, y: 140, type: 'coin'}, {x: 400, y: 140, type: 'coin'}, {x: 450, y: 140, type: 'coin'});
     } else if (num === 2) {
-        player.x = 80; player.y = 150;
-        player.attached = true;
-        platforms.push({x: 0, y: 350, w: 150, h: 50}, {x: 650, y: 350, w: 150, h: 50});
-        collectibles.push({x: 250, y: 180, type: 'coin'}, {x: 400, y: 130, type: 'coin'}, {x: 550, y: 180, type: 'coin'});
+        player.x = 20; player.y = 310; // Start far left
+        platforms.push({x: 0, y: 350, w: 120, h: 50}, {x: 680, y: 350, w: 120, h: 50});
+        collectibles.push({x: 250, y: 200, type: 'coin'}, {x: 400, y: 160, type: 'coin'}, {x: 550, y: 200, type: 'coin'});
     } else if (num === 3) {
         player.x = 30; player.y = 310;
         platforms.push({x: 0, y: 350, w: 120, h: 50}, {x: 680, y: 350, w: 120, h: 50});
         platforms.push({x: 300, y: 280, w: 150, h: 20, moving: true, range: 150, startX: 300});
         hazards.push({x: 500, y: 100, type: 'alien_drone', w: 25, h: 25});
+        collectibles.push({x: 350, y: 240, type: 'coin'}, {x: 400, y: 240, type: 'coin'});
     } else if (num === 4) {
         player.x = 30; player.y = 310;
         platforms.push({x: 0, y: 350, w: 800, h: 50});
@@ -104,29 +130,20 @@ function update() {
     if (invulnFrames > 0) invulnFrames--;
 
     if (player.attached) {
-        player.ropeAngle = Math.PI/2 + Math.sin(Date.now() / 400) * 1.2;
+        player.ropeAngle = Math.PI/2 + Math.sin(Date.now() / 500) * 1.1;
         player.x = player.ropeAnchor.x + Math.cos(player.ropeAngle) * player.ropeLength - player.w/2;
         player.y = player.ropeAnchor.y + Math.sin(player.ropeAngle) * player.ropeLength - player.h/2;
-        if (keys['Space']) {
-            player.attached = false;
-            player.vy = -5;
-            player.vx = (Math.cos(player.ropeAngle) < 0) ? -7 : 7;
-        }
     } else {
         if (keys['ArrowLeft']) player.vx = -player.speed;
         else if (keys['ArrowRight']) player.vx = player.speed;
         else player.vx *= friction;
         
-        if (keys['Space'] && player.grounded) {
-            player.vy = player.jumpPower;
-            player.grounded = false;
-        }
         player.vy += gravity;
         player.x += player.vx;
         player.y += player.vy;
     }
 
-    // Platform Collisions
+    // Collisions
     player.grounded = false;
     platforms.forEach(p => {
         if (p.moving) p.x = p.startX + Math.sin(Date.now() / 600) * p.range;
@@ -135,15 +152,14 @@ function update() {
                 player.y = p.y - player.h;
                 player.vy = 0;
                 player.grounded = true;
-                if (p.moving) player.x += Math.cos(Date.now() / 600) * 2;
+                player.canDoubleJump = false;
         }
     });
 
-    // Spring Board Collision
     springs.forEach(s => {
         if (player.x + player.w > s.x && player.x < s.x + s.w &&
             player.y + player.h >= s.y && player.y + player.h <= s.y + player.vy + 10) {
-                player.vy = -16; // Massive spring boost
+                player.vy = -16;
                 player.grounded = false;
         }
     });
@@ -152,7 +168,6 @@ function update() {
     if (player.x < 0) player.x = 0;
     if (player.y > 410) handleDeath();
 
-    // Turret: 180 frames = 3 seconds
     if (currentScreen === 1) {
         turretTimer++;
         if (turretTimer >= 180) {
@@ -210,45 +225,29 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (currentScreen === 2) {
-        ctx.fillStyle = '#0077be'; ctx.fillRect(150, 365, 500, 35);
+        ctx.fillStyle = '#0077be'; ctx.fillRect(120, 365, 560, 35);
         ctx.strokeStyle = '#553311'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(400, 0);
-        if (player.attached) ctx.lineTo(player.x + player.w/2, player.y + 10);
-        else {
-            let angle = Math.PI/2 + Math.sin(Date.now() / 400) * 1.2;
-            ctx.lineTo(400 + Math.cos(angle)*180, Math.sin(angle)*180);
-        }
+        let angle = player.attached ? player.ropeAngle : (Math.PI/2 + Math.sin(Date.now() / 500) * 1.1);
+        ctx.lineTo(400 + Math.cos(angle)*player.ropeLength, Math.sin(angle)*player.ropeLength);
         ctx.stroke();
     }
 
-    ctx.fillStyle = '#444';
-    platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
-
-    ctx.fillStyle = '#ff3333'; // Spring boards
-    springs.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
-
+    ctx.fillStyle = '#444'; platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
+    ctx.fillStyle = '#ff3333'; springs.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
     hazards.forEach(h => {
         ctx.fillStyle = h.type === 'fireball' ? '#ff4500' : '#32cd32';
         ctx.beginPath(); ctx.arc(h.x, h.y, 8, 0, Math.PI*2); ctx.fill();
     });
-    
     collectibles.forEach(c => {
         ctx.fillStyle = c.type === 'coin' ? 'gold' : 'blue';
         ctx.beginPath(); ctx.arc(c.x+7, c.y+7, 7, 0, Math.PI*2); ctx.fill();
     });
 
-    if (currentScreen === 1) {
-        ctx.fillStyle = 'black'; ctx.fillRect(390, 160, 20, 20); // Turret
-        ctx.fillRect(380, 165, 40, 8);
-    }
-
+    if (currentScreen === 1) { ctx.fillStyle = 'black'; ctx.fillRect(390, 160, 20, 20); ctx.fillRect(380, 165, 40, 8); }
     if (currentScreen === 4) {
-        if (boss.alive) { 
-            ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); 
-            ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5);
-        }
-        ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100);
-        ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40);
+        if (boss.alive) { ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5); }
+        ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100); ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40);
     }
 
     ctx.fillStyle = 'cyan'; projectiles.forEach(p => ctx.fillRect(p.x, p.y, 15, 5));
@@ -256,8 +255,7 @@ function draw() {
     if (invulnFrames % 10 < 5) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
         const {x, y} = player;
-        ctx.beginPath();
-        ctx.arc(x+10, y+8, 7, 0, Math.PI*2); 
+        ctx.beginPath(); ctx.arc(x+10, y+8, 7, 0, Math.PI*2); 
         ctx.moveTo(x+10, y+15); ctx.lineTo(x+10, y+30);
         ctx.moveTo(x, y+22); ctx.lineTo(x+20, y+22);
         ctx.moveTo(x+10, y+30); ctx.lineTo(x, y+40);
@@ -266,14 +264,8 @@ function draw() {
         if (player.hasRaygun) { ctx.fillStyle = 'blue'; ctx.fillRect(x+12, y+18, 12, 5); }
     }
 
-    if (gameOver) {
-        ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400);
-        ctx.fillStyle='white'; ctx.textAlign="center"; ctx.fillText("OUT OF LIVES - PRESS R", 400, 200);
-    }
-    if (gameWin) {
-        ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(0,0,800,400);
-        ctx.fillStyle='black'; ctx.textAlign="center"; ctx.fillText("VICTORY!", 400, 200);
-    }
+    if (gameOver) { ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400); ctx.fillStyle='white'; ctx.textAlign="center"; ctx.fillText("OUT OF LIVES - PRESS R", 400, 200); }
+    if (gameWin) { ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(0,0,800,400); ctx.fillStyle='black'; ctx.textAlign="center"; ctx.fillText("VICTORY!", 400, 200); }
 }
 
 function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
@@ -281,7 +273,7 @@ function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
 window.addEventListener('keydown', e => {
     if (e.code === 'KeyR' && (gameOver || gameWin)) {
         gameOver = false; gameWin = false; coins = 0; lives = 3;
-        document.getElementById('lives').innerText = 3;
+        document.getElementById('lives').innerText = 3; document.getElementById('coinCount').innerText = 0;
         boss.hp = 3; boss.alive = true; player.hasRaygun = false;
         initScreen(1);
     }
