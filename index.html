@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman Hero: Final Boss Battle</title>
+    <title>Stickman Hero: Boss Stalker Edition</title>
     <style>
         body { margin: 0; background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
         canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
@@ -56,7 +56,7 @@ let hazards = [];
 let collectibles = [];
 let projectiles = [];
 let springs = [];
-let boss = { x: 620, y: 270, w: 60, h: 80, hp: 3, alive: true };
+let boss = { x: 620, y: 270, w: 60, h: 80, hp: 3, alive: true, shootTimer: 0 };
 let turretTimer = 0;
 
 const keys = {};
@@ -77,10 +77,11 @@ window.addEventListener('keydown', e => {
             player.vx = (Math.cos(player.ropeAngle) < 0) ? -8 : 8;
             player.vy = -4;
         } else {
-            let dx = (player.x + player.w/2) - player.ropeAnchor.x;
-            let dy = (player.y + player.h/2) - player.ropeAnchor.y;
-            let dist = Math.sqrt(dx*dx + dy*dy);
-            if (dist < 260) player.attached = true;
+            // Tightened Rope Check
+            let ropeEndX = player.ropeAnchor.x + Math.cos(player.ropeAngle) * player.ropeLength;
+            let ropeEndY = player.ropeAnchor.y + Math.sin(player.ropeAngle) * player.ropeLength;
+            let dist = Math.sqrt(Math.pow((player.x + player.w/2) - ropeEndX, 2) + Math.pow((player.y + player.h/2) - ropeEndY, 2));
+            if (dist < 40) player.attached = true;
         }
     }
     keys[e.code] = true;
@@ -90,10 +91,10 @@ window.addEventListener('keyup', e => keys[e.code] = false);
 function updateInstructions() {
     const text = document.getElementById('controlText');
     const base = "Arrows to Move | Space (Double) Jump";
-    if (currentScreen === 1) text.innerHTML = base + " | Use the Red Spring to reach coins!";
-    if (currentScreen === 2) text.innerHTML = base + " | Press <span class='key'>B</span> to Grab/Release Rope";
-    if (currentScreen === 3) text.innerHTML = base + " | Dodge the Alien Drone!";
-    if (currentScreen === 4) text.innerHTML = base + " | Spring to platform! Press <span class='key'>F</span> to Shoot";
+    if (currentScreen === 1) text.innerHTML = base + " | Spring to reach coins!";
+    if (currentScreen === 2) text.innerHTML = base + " | Get close and press <span class='key'>B</span> to Grab";
+    if (currentScreen === 3) text.innerHTML = base + " | Avoid the tracking Drone!";
+    if (currentScreen === 4) text.innerHTML = base + " | Boss Stalks you! Shoot with <span class='key'>F</span>";
 }
 
 function initScreen(num) {
@@ -121,9 +122,10 @@ function initScreen(num) {
         collectibles.push({x: 350, y: 240, w: 15, h: 15, type: 'coin'}, {x: 400, y: 240, w: 15, h: 15, type: 'coin'});
     } else if (num === 4) {
         player.x = 30; player.y = 310;
-        platforms.push({x: 0, y: 350, w: 800, h: 50}); // Floor
-        platforms.push({x: 50, y: 180, w: 120, h: 20}); // Gun Platform
-        springs.push({x: 80, y: 335, w: 40, h: 15}); // Spring board to reach gun!
+        boss.x = 650; boss.hp = 3; boss.alive = true; boss.shootTimer = 0;
+        platforms.push({x: 0, y: 350, w: 800, h: 50});
+        platforms.push({x: 50, y: 180, w: 120, h: 20});
+        springs.push({x: 80, y: 335, w: 40, h: 15});
         collectibles.push({x: 100, y: 140, w: 25, h: 12, type: 'raygun'});
     }
 }
@@ -140,8 +142,10 @@ function update() {
     if (gameOver || gameWin) return;
     if (invulnFrames > 0) invulnFrames--;
 
+    // Update Rope Swing Angle even if not attached so player can time the grab
+    player.ropeAngle = Math.PI/2 + Math.sin(Date.now() / 500) * 1.1;
+
     if (player.attached) {
-        player.ropeAngle = Math.PI/2 + Math.sin(Date.now() / 500) * 1.1;
         player.x = player.ropeAnchor.x + Math.cos(player.ropeAngle) * player.ropeLength - player.w/2;
         player.y = player.ropeAnchor.y + Math.sin(player.ropeAngle) * player.ropeLength - player.h/2;
     } else {
@@ -153,7 +157,6 @@ function update() {
         player.y += player.vy;
     }
 
-    player.grounded = false;
     platforms.forEach(p => {
         if (p.moving) p.x = p.startX + Math.sin(Date.now() / 600) * p.range;
         if (player.vy >= 0 && player.x + player.w > p.x && player.x < p.x + p.w &&
@@ -182,11 +185,38 @@ function update() {
     if (currentScreen === 3) {
         hazards.forEach(h => { if (h.type === 'alien_drone') { h.x += (player.x - h.x) * 0.015; h.y += (player.y - h.y) * 0.015; } });
     }
+
+    // BOSS LOGIC (SCREEN 4)
+    if (currentScreen === 4 && boss.alive) {
+        // Move slowly toward player
+        let dir = player.x < boss.x ? -0.8 : 0.8;
+        boss.x += dir;
+        
+        // Shoot every 3 seconds
+        boss.shootTimer++;
+        if (boss.shootTimer >= 180) {
+            let bDir = player.x < boss.x ? -6 : 6;
+            hazards.push({x: boss.x + boss.w/2, y: boss.y + 30, vx: bDir, w: 15, h: 10, type: 'boss_bolt'});
+            boss.shootTimer = 0;
+        }
+
+        // Death on contact
+        if (rectIntersect(player, boss)) handleDeath();
+    }
+
     if (currentScreen === 4 && player.hasRaygun && keys['KeyF']) {
         if (projectiles.length < 1) { projectiles.push({x: player.x + 20, y: player.y + 15, vx: 10, w: 15, h: 5}); keys['KeyF'] = false; }
     }
 
-    hazards.forEach(h => { if (rectIntersect(player, h)) handleDeath(); });
+    // Hazards
+    for (let i = hazards.length - 1; i >= 0; i--) {
+        let h = hazards[i];
+        h.x += h.vx || 0;
+        if (rectIntersect(player, h)) { handleDeath(); hazards.splice(i, 1); continue; }
+        if (h.x < -50 || h.x > 850) hazards.splice(i, 1);
+    }
+
+    // Coins
     for (let i = collectibles.length - 1; i >= 0; i--) {
         if (rectIntersect(player, collectibles[i])) {
             if (collectibles[i].type === 'coin') { coins++; document.getElementById('coinCount').innerText = coins; }
@@ -195,6 +225,7 @@ function update() {
         }
     }
 
+    // Player Bullets
     projectiles.forEach((p, i) => {
         p.x += p.vx;
         if (boss.alive && rectIntersect(p, boss)) {
@@ -202,11 +233,6 @@ function update() {
             if (boss.hp <= 0) { boss.alive = false; gameWin = true; }
         }
     });
-
-    for(let i=hazards.length-1; i>=0; i--) {
-        hazards[i].x += hazards[i].vx || 0;
-        if(hazards[i].x < -50 || hazards[i].x > 850) hazards.splice(i, 1);
-    }
 }
 
 function rectIntersect(r1, r2) {
@@ -218,28 +244,37 @@ function draw() {
     if (currentScreen === 2) {
         ctx.fillStyle = '#0077be'; ctx.fillRect(120, 365, 560, 35);
         ctx.strokeStyle = '#553311'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(400, 0);
-        let angle = player.attached ? player.ropeAngle : (Math.PI/2 + Math.sin(Date.now() / 500) * 1.1);
-        ctx.lineTo(400 + Math.cos(angle)*player.ropeLength, Math.sin(angle)*player.ropeLength); ctx.stroke();
+        ctx.lineTo(400 + Math.cos(player.ropeAngle)*player.ropeLength, Math.sin(player.ropeAngle)*player.ropeLength); ctx.stroke();
     }
     ctx.fillStyle = '#444'; platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
     ctx.fillStyle = '#ff3333'; springs.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
+    
     hazards.forEach(h => {
-        ctx.fillStyle = h.type === 'fireball' ? '#ff4500' : '#32cd32';
+        if (h.type === 'fireball') ctx.fillStyle = '#ff4500';
+        else if (h.type === 'boss_bolt') ctx.fillStyle = '#ff00ff';
+        else ctx.fillStyle = '#32cd32';
         ctx.beginPath(); ctx.arc(h.x, h.y, 8, 0, Math.PI*2); ctx.fill();
     });
+
     collectibles.forEach(c => {
         ctx.fillStyle = c.type === 'coin' ? 'gold' : 'blue';
         ctx.beginPath(); ctx.arc(c.x+c.w/2, c.y+c.h/2, 7, 0, Math.PI*2); ctx.fill();
     });
+
     if (currentScreen === 1) { ctx.fillStyle = 'black'; ctx.fillRect(390, 160, 20, 20); ctx.fillRect(380, 165, 40, 8); }
+    
     if (currentScreen === 4) {
         if (boss.alive) { 
             ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); 
             ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5); 
+            // Boss Eye
+            ctx.fillStyle = 'white'; ctx.fillRect(boss.x + (player.x < boss.x ? 5 : 40), boss.y + 15, 15, 15);
         }
         ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100); ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40);
     }
+
     ctx.fillStyle = 'cyan'; projectiles.forEach(p => ctx.fillRect(p.x, p.y, 15, 5));
+    
     if (invulnFrames % 10 < 5) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 2; const {x, y} = player;
         ctx.beginPath(); ctx.arc(x+10, y+8, 7, 0, Math.PI*2); 
@@ -247,6 +282,7 @@ function draw() {
         ctx.moveTo(x+10, y+30); ctx.lineTo(x, y+40); ctx.moveTo(x+10, y+30); ctx.lineTo(x+20, y+40); ctx.stroke();
         if (player.hasRaygun) { ctx.fillStyle = 'blue'; ctx.fillRect(x+12, y+18, 12, 5); }
     }
+
     if (gameOver) { 
         ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400); 
         ctx.fillStyle='white'; ctx.textAlign="center"; ctx.font="24px Arial";
@@ -267,7 +303,6 @@ window.addEventListener('keydown', e => {
     if (e.code === 'KeyR' && (gameOver || gameWin)) {
         gameOver = false; gameWin = false; coins = 0; lives = 3;
         document.getElementById('lives').innerText = 3; document.getElementById('coinCount').innerText = 0;
-        boss.hp = 3; boss.alive = true; player.hasRaygun = false;
         initScreen(1);
     }
 });
