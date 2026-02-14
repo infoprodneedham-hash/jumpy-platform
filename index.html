@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman Hero: Rope Master</title>
+    <title>Stickman Hero: 3 Lives Edition</title>
     <style>
         body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         canvas { background: #87CEEB; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
@@ -12,7 +12,7 @@
 </head>
 <body>
     <div id="ui">
-        <div>GOLD: <span id="coinCount">0</span></div>
+        <div>LIVES: <span id="lives">3</span> | GOLD: <span id="coinCount">0</span></div>
         <div>LEVEL: <span id="screenNum">1</span></div>
     </div>
     <canvas id="gameCanvas"></canvas>
@@ -25,8 +25,10 @@ canvas.height = 400;
 
 let currentScreen = 1;
 let coins = 0;
+let lives = 3;
 let gameOver = false;
 let gameWin = false;
+let invulnFrames = 0;
 
 const gravity = 0.5;
 const friction = 0.8;
@@ -37,12 +39,10 @@ const player = {
     speed: 5, jumpPower: -11,
     grounded: false,
     hasRaygun: false,
-    // Rope Swing Properties
     attached: false,
     ropeAngle: Math.PI / 4,
     ropeLength: 180,
-    ropeAnchor: { x: 400, y: 0 },
-    ropeSpeed: 0.05
+    ropeAnchor: { x: 400, y: 0 }
 };
 
 let platforms = [];
@@ -66,18 +66,17 @@ function initScreen(num) {
         player.x = 50; player.y = 310;
         platforms.push({x: 0, y: 350, w: 800, h: 50}); 
         platforms.push({x: 300, y: 220, w: 150, h: 20});
-        // Added coins on Screen 1 Platform
         collectibles.push({x: 320, y: 190, type: 'coin'}, {x: 370, y: 190, type: 'coin'}, {x: 420, y: 190, type: 'coin'});
     } else if (num === 2) {
         player.x = 80; player.y = 150;
-        player.attached = true; // Start attached to rope
+        player.attached = true;
         platforms.push({x: 0, y: 350, w: 150, h: 50}, {x: 650, y: 350, w: 150, h: 50});
         collectibles.push({x: 250, y: 180, type: 'coin'}, {x: 400, y: 130, type: 'coin'}, {x: 550, y: 180, type: 'coin'});
     } else if (num === 3) {
         player.x = 30; player.y = 310;
         platforms.push({x: 0, y: 350, w: 120, h: 50}, {x: 680, y: 350, w: 120, h: 50});
         platforms.push({x: 300, y: 280, w: 150, h: 20, moving: true, range: 150, startX: 300});
-        hazards.push({x: 500, y: 100, type: 'alien_drone', w: 20, h: 20});
+        hazards.push({x: 500, y: 100, type: 'alien_drone', w: 25, h: 25});
     } else if (num === 4) {
         player.x = 30; player.y = 310;
         platforms.push({x: 0, y: 350, w: 800, h: 50});
@@ -86,54 +85,55 @@ function initScreen(num) {
     }
 }
 
+function handleDeath() {
+    if (invulnFrames > 0) return;
+    lives--;
+    document.getElementById('lives').innerText = lives;
+    if (lives <= 0) {
+        gameOver = true;
+    } else {
+        invulnFrames = 60; // 1 second invulnerability
+        initScreen(currentScreen); // Reset current screen
+    }
+}
+
 function update() {
     if (gameOver || gameWin) return;
+    if (invulnFrames > 0) invulnFrames--;
 
     if (player.attached) {
-        // ROPE LOGIC
         player.ropeAngle = Math.PI/2 + Math.sin(Date.now() / 400) * 1.2;
         player.x = player.ropeAnchor.x + Math.cos(player.ropeAngle) * player.ropeLength - player.w/2;
         player.y = player.ropeAnchor.y + Math.sin(player.ropeAngle) * player.ropeLength - player.h/2;
-        
         if (keys['Space']) {
             player.attached = false;
-            player.vy = -5; // Small jump off
-            player.vx = (Math.cos(player.ropeAngle) < 0) ? -7 : 7; // Launch speed
+            player.vy = -5;
+            player.vx = (Math.cos(player.ropeAngle) < 0) ? -7 : 7;
         }
     } else {
-        // NORMAL PHYSICS
         if (keys['ArrowLeft']) player.vx = -player.speed;
         else if (keys['ArrowRight']) player.vx = player.speed;
         else player.vx *= friction;
-
         if (keys['Space'] && player.grounded) {
             player.vy = player.jumpPower;
             player.grounded = false;
         }
-
         player.vy += gravity;
         player.x += player.vx;
         player.y += player.vy;
-
-        // Grab Rope (Screen 2)
         if (currentScreen === 2 && keys['ShiftLeft']) {
             let dx = (player.x + player.w/2) - player.ropeAnchor.x;
             let dy = (player.y + player.h/2) - player.ropeAnchor.y;
             let dist = Math.sqrt(dx*dx + dy*dy);
-            if (Math.abs(dist - player.ropeLength) < 40) player.attached = true;
+            if (Math.abs(dist - player.ropeLength) < 50) player.attached = true;
         }
     }
 
-    // Ground Collision Logic
     player.grounded = false;
     platforms.forEach(p => {
         if (p.moving) p.x = p.startX + Math.sin(Date.now() / 600) * p.range;
-
-        if (player.vy >= 0 && 
-            player.x + player.w > p.x && 
-            player.x < p.x + p.w &&
-            player.y + player.h >= p.y && 
-            player.y + player.h <= p.y + player.vy + 10) {
+        if (player.vy >= 0 && player.x + player.w > p.x && player.x < p.x + p.w &&
+            player.y + player.h >= p.y && player.y + player.h <= p.y + player.vy + 10) {
                 player.y = p.y - player.h;
                 player.vy = 0;
                 player.grounded = true;
@@ -141,31 +141,29 @@ function update() {
         }
     });
 
-    // Hazards & Screen Logic
     if (player.x > 800) { if (currentScreen < 4) initScreen(currentScreen + 1); else player.x = 780; }
     if (player.x < 0) player.x = 0;
-    if (player.y > 400) gameOver = true;
+    if (player.y > 410) handleDeath();
 
-    // Turret (Screen 1)
+    // Turret firing every 3 seconds (180 frames)
     if (currentScreen === 1) {
         turretTimer++;
-        if (turretTimer > 180) {
-            hazards.push({x: 375, y: 205, vx: 5, w: 10, h: 10, type: 'fireball'}, {x: 375, y: 205, vx: -5, w: 10, h: 10, type: 'fireball'});
+        if (turretTimer >= 180) {
+            hazards.push({x: 375, y: 205, vx: 5, w: 12, h: 12, type: 'fireball'}, 
+                         {x: 375, y: 205, vx: -5, w: 12, h: 12, type: 'fireball'});
             turretTimer = 0;
         }
     }
 
-    // Alien Drone (Screen 3)
     if (currentScreen === 3) {
         hazards.forEach(h => {
             if (h.type === 'alien_drone') {
-                h.x += (player.x - h.x) * 0.02;
-                h.y += (player.y - h.y) * 0.02;
+                h.x += (player.x - h.x) * 0.015;
+                h.y += (player.y - h.y) * 0.015;
             }
         });
     }
 
-    // Combat (Screen 4)
     if (currentScreen === 4 && player.hasRaygun && keys['KeyF']) {
         if (projectiles.length < 1) {
             projectiles.push({x: player.x + 20, y: player.y + 15, vx: 10, w: 15, h: 5});
@@ -173,8 +171,8 @@ function update() {
         }
     }
 
-    // Collisions
-    hazards.forEach(h => { if (rectIntersect(player, h)) gameOver = true; });
+    hazards.forEach(h => { if (rectIntersect(player, h)) handleDeath(); });
+    
     collectibles.forEach((c, i) => {
         if (rectIntersect(player, c)) {
             if (c.type === 'coin') { coins++; document.getElementById('coinCount').innerText = coins; }
@@ -190,81 +188,82 @@ function update() {
             if (boss.hp <= 0) { boss.alive = false; gameWin = true; }
         }
     });
+
+    for(let i=hazards.length-1; i>=0; i--) {
+        hazards[i].x += hazards[i].vx || 0;
+        if(hazards[i].x < -50 || hazards[i].x > 850) hazards.splice(i, 1);
+    }
 }
 
 function rectIntersect(r1, r2) {
-    return r1.x < r2.x + (r2.w || 10) && r1.x + r1.w > r2.x && r1.y < r2.y + (r2.h || 10) && r1.y + r1.h > r2.y;
+    return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Screen 2 Special Visuals
     if (currentScreen === 2) {
-        ctx.fillStyle = '#0077be'; ctx.fillRect(150, 365, 500, 35); // Water
+        ctx.fillStyle = '#0077be'; ctx.fillRect(150, 365, 500, 35);
         ctx.strokeStyle = '#553311'; ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(player.ropeAnchor.x, player.ropeAnchor.y);
-        if (player.attached) {
-            ctx.lineTo(player.x + player.w/2, player.y + 10);
-        } else {
+        ctx.beginPath(); ctx.moveTo(400, 0);
+        if (player.attached) ctx.lineTo(player.x + player.w/2, player.y + 10);
+        else {
             let angle = Math.PI/2 + Math.sin(Date.now() / 400) * 1.2;
-            ctx.lineTo(player.ropeAnchor.x + Math.cos(angle)*player.ropeLength, player.ropeAnchor.y + Math.sin(angle)*player.ropeLength);
+            ctx.lineTo(400 + Math.cos(angle)*180, Math.sin(angle)*180);
         }
         ctx.stroke();
     }
 
-    // Platforms
     ctx.fillStyle = '#444';
     platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
 
-    // Items/Hazards
     hazards.forEach(h => {
         ctx.fillStyle = h.type === 'fireball' ? '#ff4500' : '#32cd32';
         ctx.beginPath(); ctx.arc(h.x, h.y, 8, 0, Math.PI*2); ctx.fill();
     });
+    
     collectibles.forEach(c => {
         ctx.fillStyle = c.type === 'coin' ? 'gold' : 'blue';
         ctx.beginPath(); ctx.arc(c.x+7, c.y+7, 7, 0, Math.PI*2); ctx.fill();
     });
 
-    // Screen 1 Turret
     if (currentScreen === 1) {
-        ctx.fillStyle = 'black'; ctx.fillRect(365, 200, 20, 20); // Turret body
-        ctx.fillRect(355, 205, 40, 8); // Barrel
+        ctx.fillStyle = 'black'; ctx.fillRect(365, 200, 20, 20);
+        ctx.fillRect(355, 205, 40, 8);
     }
 
-    // Screen 4 Boss
     if (currentScreen === 4) {
         if (boss.alive) { 
             ctx.fillStyle = 'purple'; ctx.fillRect(boss.x, boss.y, boss.w, boss.h); 
             ctx.fillStyle = 'red'; ctx.fillRect(boss.x, boss.y-10, (boss.hp/3)*boss.w, 5);
         }
-        ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100); // Cage
-        ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40); // Princess
+        ctx.strokeStyle = 'black'; ctx.strokeRect(720, 250, 50, 100);
+        ctx.fillStyle = '#ff69b4'; ctx.fillRect(735, 290, 20, 40);
     }
 
     ctx.fillStyle = 'cyan'; projectiles.forEach(p => ctx.fillRect(p.x, p.y, 15, 5));
 
-    // Stick Figure
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-    const {x, y} = player;
-    ctx.beginPath();
-    ctx.arc(x+10, y+8, 7, 0, Math.PI*2); // Head
-    ctx.moveTo(x+10, y+15); ctx.lineTo(x+10, y+30); // Body
-    ctx.moveTo(x, y+22); ctx.lineTo(x+20, y+22); // Arms
-    ctx.moveTo(x+10, y+30); ctx.lineTo(x, y+40); // L-Leg
-    ctx.moveTo(x+10, y+30); ctx.lineTo(x+20, y+40); // R-Leg
-    ctx.stroke();
-    if (player.hasRaygun) { ctx.fillStyle = 'blue'; ctx.fillRect(x+12, y+18, 12, 5); }
+    // Player (Flickers when invulnerable)
+    if (invulnFrames % 10 < 5) {
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+        const {x, y} = player;
+        ctx.beginPath();
+        ctx.arc(x+10, y+8, 7, 0, Math.PI*2); 
+        ctx.moveTo(x+10, y+15); ctx.lineTo(x+10, y+30);
+        ctx.moveTo(x, y+22); ctx.lineTo(x+20, y+22);
+        ctx.moveTo(x+10, y+30); ctx.lineTo(x, y+40);
+        ctx.moveTo(x+10, y+30); ctx.lineTo(x+20, y+40);
+        ctx.stroke();
+        if (player.hasRaygun) { ctx.fillStyle = 'blue'; ctx.fillRect(x+12, y+18, 12, 5); }
+    }
 
     if (gameOver) {
         ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,800,400);
-        ctx.fillStyle='white'; ctx.font="20px Arial"; ctx.fillText("GAME OVER - PRESS R TO RESTART", 240, 200);
+        ctx.fillStyle='white'; ctx.textAlign="center"; ctx.fillText("OUT OF LIVES - PRESS R TO RESTART", 400, 200);
     }
     if (gameWin) {
         ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(0,0,800,400);
-        ctx.fillStyle='black'; ctx.font="20px Arial"; ctx.fillText("VICTORY! PRINCESS SAVED!", 270, 200);
+        ctx.fillStyle='black'; ctx.textAlign="center"; ctx.fillText("VICTORY! PRINCESS SAVED!", 400, 200);
     }
 }
 
@@ -272,7 +271,8 @@ function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
 
 window.addEventListener('keydown', e => {
     if (e.code === 'KeyR' && (gameOver || gameWin)) {
-        gameOver = false; gameWin = false; coins = 0; 
+        gameOver = false; gameWin = false; coins = 0; lives = 3;
+        document.getElementById('lives').innerText = 3;
         boss.hp = 3; boss.alive = true; player.hasRaygun = false;
         initScreen(1);
     }
