@@ -2,37 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stumpy's Great Rescue - Audio Edition</title>
+    <title>Stumpy's 5-Stage Odyssey</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: #222; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh;
-            color: white;
-            font-family: 'Courier New', Courier, monospace;
-        }
-        canvas { 
-            background: linear-gradient(#1a2a6c, #b21f1f, #fdbb2d); 
-            border: 5px solid #444;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        }
-        #ui {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            pointer-events: none;
-            text-shadow: 2px 2px 2px black;
-        }
+        body { margin: 0; overflow: hidden; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: 'Courier New', Courier, monospace; }
+        canvas { border: 5px solid #444; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 2px 2px 2px black; font-size: 18px; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    HEALTH: <span id="health">100</span>%<br>
+    STAGE: <span id="stage">1</span>/5 | 
+    HEALTH: <span id="health">100</span>% | 
     FAIRIES: <span id="score">0</span>
 </div>
 
@@ -46,78 +27,81 @@ canvas.height = 400;
 
 // --- AUDIO SYSTEM ---
 let audioCtx = null;
+function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
 
-function initAudio() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-}
-
-function playSound(freq, type, duration, vol = 0.1) {
+function playSound(freq, type, duration, vol = 0.1, slide = 0) {
     if (!audioCtx) return;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    
     osc.type = type;
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    
+    if (slide) osc.frequency.exponentialRampToValueAtTime(freq + slide, audioCtx.currentTime + duration);
     gain.connect(audioCtx.destination);
     osc.connect(gain);
-    
     gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-    
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
     osc.start();
     osc.stop(audioCtx.currentTime + duration);
 }
 
-// --- GAME CONFIG ---
-let player = { 
-    x: 50, y: 300, w: 25, h: 35, 
-    dx: 0, dy: 0, 
-    health: 100, score: 0, 
-    grounded: false, 
-    dead: false,
-    win: false
-};
-
+// --- GAME STATE ---
+let currentLevel = 1;
+const maxLevels = 5;
+let player = { x: 50, y: 300, w: 25, h: 35, dx: 0, dy: 0, health: 100, score: 0, grounded: false, dead: false, win: false };
+let platforms = [], turrets = [], fireballs = [], fairies = [];
 let cameraX = 0;
 const gravity = 0.7;
 const jumpPower = -14;
 const moveSpeed = 5;
-const gameStartTime = Date.now();
 
-let platforms = [
-    { x: 0, y: 350, w: 300, h: 50, sink: false },
-    { x: 400, y: 280, w: 120, h: 20, sink: true, speed: 0 },
-    { x: 600, y: 220, w: 120, h: 20, sink: true, speed: 0 },
-    { x: 850, y: 300, w: 150, h: 20, sink: false },
-    { x: 1100, y: 350, w: 400, h: 100, sink: false, castle: true }
+// Biomes for each level
+const biomes = [
+    { sky: ["#1a2a6c", "#b21f1f"], plat: "#444" }, // Sunset
+    { sky: ["#0f0c29", "#302b63"], plat: "#2c3e50" }, // Night
+    { sky: ["#134e5e", "#71b280"], plat: "#1e3d2b" }, // Swamp
+    { sky: ["#4b1248", "#f0c27b"], plat: "#3d1e3d" }, // Toxic
+    { sky: ["#000000", "#434343"], plat: "#111" }  // Abyss
 ];
 
-let turrets = [
-    { x: 250, y: 320, lastShot: 0 },
-    { x: 880, y: 270, lastShot: 0 }
-];
+function generateLevel(level) {
+    platforms = [{ x: 0, y: 350, w: 300, h: 50, sink: false }];
+    turrets = [];
+    fairies = [];
+    fireballs = [];
+    player.x = 50; player.y = 300;
+    
+    let levelWidth = 1500 + (level * 500);
+    let currentX = 350;
 
-let fireballs = [];
-let fairies = [
-    { x: 450, y: 200, collected: false },
-    { x: 650, y: 140, collected: false },
-    { x: 920, y: 220, collected: false }
-];
+    while (currentX < levelWidth - 400) {
+        let gap = 80 + Math.random() * 70;
+        let width = 100 + Math.random() * 150;
+        let y = 150 + Math.random() * 200;
+        let isSinking = Math.random() > 0.6;
+        
+        platforms.push({ x: currentX + gap, y: y, w: width, h: 20, sink: isSinking, speed: 0 });
+        
+        if (Math.random() > 0.5) {
+            turrets.push({ x: currentX + gap + (width/2), y: y - 30, lastShot: 0 });
+        }
+        if (Math.random() > 0.4) {
+            fairies.push({ x: currentX + gap + (width/2), y: y - 60, collected: false });
+        }
+        currentX += gap + width;
+    }
+    
+    // Final Castle Platform
+    platforms.push({ x: currentX + 100, y: 300, w: 400, h: 100, castle: true });
+    playSound(200, 'sine', 0.5, 0.1, 400); // Level Start Sound
+}
 
 let keys = {};
-window.onkeydown = (e) => {
-    initAudio(); // Resume/Start audio context on user input
-    keys[e.code] = true;
-};
+window.onkeydown = (e) => { initAudio(); keys[e.code] = true; };
 window.onkeyup = (e) => keys[e.code] = false;
 
 function update() {
     if (player.dead || player.win) return;
 
-    // Movement
     if (keys['ArrowRight'] || keys['KeyD']) player.dx = moveSpeed;
     else if (keys['ArrowLeft'] || keys['KeyA']) player.dx = -moveSpeed;
     else player.dx = 0;
@@ -125,75 +109,59 @@ function update() {
     if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.grounded) {
         player.dy = jumpPower;
         player.grounded = false;
-        playSound(150, 'square', 0.1); // Jump Sound
+        playSound(150, 'square', 0.1, 0.1, 100); 
     }
 
-    // Physics
     player.x += player.dx;
     player.dy += gravity;
     player.y += player.dy;
     player.grounded = false;
-
     cameraX = Math.max(0, player.x - 200);
 
-    // Collisions: Platforms
     platforms.forEach(p => {
         if (player.x < p.x + p.w && player.x + player.w > p.x &&
             player.y + player.h > p.y && player.y + player.h < p.y + player.dy + 10) {
-            player.dy = 0;
-            player.y = p.y - player.h;
-            player.grounded = true;
-            if (p.sink) {
-                p.speed += 0.15;
-                p.y += p.speed;
-            }
-            if (p.castle && player.x > p.x + 100) {
-                player.win = true;
-                playSound(500, 'sine', 0.3);
-                setTimeout(() => playSound(700, 'sine', 0.5), 100);
+            player.dy = 0; player.y = p.y - player.h; player.grounded = true;
+            if (p.sink) { p.speed += 0.1; p.y += p.speed; }
+            if (p.castle && player.x > p.x + 150) {
+                if (currentLevel < maxLevels) {
+                    currentLevel++;
+                    generateLevel(currentLevel);
+                } else {
+                    player.win = true;
+                    playSound(500, 'sine', 0.8, 0.1, 500);
+                }
             }
         }
     });
 
-    // Turrets & Fireballs
     let now = Date.now();
-    let timeElapsed = now - gameStartTime;
-
-    // Only fire if 5 seconds have passed
-    if (timeElapsed > 5000) {
-        turrets.forEach(t => {
-            if (now - t.lastShot > 2000 && Math.abs(player.x - t.x) < 500) {
-                fireballs.push({ x: t.x, y: t.y, dx: -4 });
-                t.lastShot = now;
-                playSound(100, 'sawtooth', 0.1, 0.05); // Turret Sound
-            }
-        });
-    }
-
-    fireballs.forEach((f, index) => {
-        f.x += f.dx;
-        if (f.x < player.x + player.w && f.x + 15 > player.x &&
-            f.y < player.y + player.h && f.y + 15 > player.y) {
-            player.health -= 25;
-            fireballs.splice(index, 1);
-            playSound(60, 'sawtooth', 0.2); // Hit Sound
+    turrets.forEach(t => {
+        if (now - t.lastShot > 2500 - (currentLevel * 200) && Math.abs(player.x - t.x) < 600) {
+            fireballs.push({ x: t.x, y: t.y, dx: -5 });
+            t.lastShot = now;
+            playSound(80, 'sawtooth', 0.1, 0.03);
         }
-        if (f.x < cameraX - 100) fireballs.splice(index, 1);
     });
 
-    // Fairies
+    fireballs.forEach((f, i) => {
+        f.x += f.dx;
+        if (f.x < player.x + player.w && f.x + 15 > player.x && f.y < player.y + player.h && f.y + 15 > player.y) {
+            player.health -= 20; fireballs.splice(i, 1);
+            playSound(40, 'sawtooth', 0.3, 0.2);
+        }
+    });
+
     fairies.forEach(f => {
         if (!f.collected && Math.hypot(player.x - f.x, player.y - f.y) < 30) {
-            f.collected = true;
-            player.score++;
-            player.health = Math.min(100, player.health + 20);
-            playSound(880, 'sine', 0.2); // Fairy Sound
+            f.collected = true; player.score++; player.health = Math.min(100, player.health + 15);
+            playSound(1200, 'sine', 0.2, 0.1, -400);
         }
     });
 
     if (player.y > canvas.height || player.health <= 0) {
         player.dead = true;
-        playSound(40, 'square', 0.4); // Death Sound
+        playSound(50, 'square', 0.5);
     }
 
     draw();
@@ -201,89 +169,66 @@ function update() {
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let b = biomes[currentLevel - 1];
+    let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, b.sky[0]); grad.addColorStop(1, b.sky[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
     ctx.translate(-cameraX, 0);
 
-    // Draw Platforms
     platforms.forEach(p => {
-        ctx.fillStyle = p.castle ? "#555" : (p.sink ? "#633" : "#444");
+        ctx.fillStyle = p.castle ? "#ffd700" : b.plat;
         ctx.fillRect(p.x, p.y, p.w, p.h);
         if(p.castle) {
-            ctx.fillStyle = "#333";
-            ctx.fillRect(p.x + 150, p.y - 100, 200, 100);
-            ctx.fillStyle = "pink"; 
-            ctx.fillRect(p.x + 240, p.y - 40, 20, 40);
+            ctx.fillStyle = "#333"; ctx.fillRect(p.x + 200, p.y - 120, 150, 120);
+            ctx.fillStyle = "white"; ctx.fillRect(p.x + 260, p.y - 40, 30, 40);
         }
     });
 
-    // Draw Turrets
-    ctx.fillStyle = "#222";
-    turrets.forEach(t => ctx.fillRect(t.x, t.y, 30, 30));
+    ctx.fillStyle = "#000";
+    turrets.forEach(t => ctx.fillRect(t.x, t.y, 25, 25));
 
-    // Draw Fireballs
-    ctx.fillStyle = "#ff4500";
-    fireballs.forEach(f => {
-        ctx.beginPath();
-        ctx.arc(f.x, f.y + 15, 8, 0, Math.PI*2);
-        ctx.fill();
-    });
-
-    // Draw Fairies
-    ctx.fillStyle = `hsla(60, 100%, 50%, ${0.5 + Math.sin(Date.now()/200)*0.5})`;
+    ctx.fillStyle = "#ff0";
     fairies.forEach(f => {
         if (!f.collected) {
-            ctx.beginPath();
-            ctx.arc(f.x, f.y + Math.sin(Date.now()/300)*5, 10, 0, Math.PI*2);
-            ctx.fill();
+            ctx.globalAlpha = 0.6 + Math.sin(Date.now()/100) * 0.4;
+            ctx.beginPath(); ctx.arc(f.x, f.y, 8, 0, Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 1;
         }
     });
 
+    ctx.fillStyle = "orange";
+    fireballs.forEach(f => { ctx.beginPath(); ctx.arc(f.x, f.y+12, 6, 0, Math.PI*2); ctx.fill(); });
+
     // Draw Stumpy
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 3;
-    const px = player.x + 12;
-    const py = player.y;
-    ctx.strokeRect(px - 5, py - 15, 10, 10);
-    ctx.beginPath();
-    ctx.moveTo(px, py - 5); ctx.lineTo(px, py + 15);
-    ctx.moveTo(px - 10, py + 5); ctx.lineTo(px + 10, py + 5);
-    ctx.moveTo(px, py + 15); ctx.lineTo(px - 8, py + 30);
-    ctx.moveTo(px, py + 15); ctx.lineTo(px + 8, py + 30);
+    ctx.strokeStyle = "white"; ctx.lineWidth = 2;
+    ctx.strokeRect(player.x + 7, player.y, 10, 10); // Head
+    ctx.beginPath(); // Body
+    ctx.moveTo(player.x+12, player.y+10); ctx.lineTo(player.x+12, player.y+25);
+    ctx.moveTo(player.x+2, player.y+15); ctx.lineTo(player.x+22, player.y+15);
+    ctx.moveTo(player.x+12, player.y+25); ctx.lineTo(player.x+5, player.y+35);
+    ctx.moveTo(player.x+12, player.y+25); ctx.lineTo(player.x+19, player.y+35);
     ctx.stroke();
 
     ctx.restore();
 
-    // UI Update
     document.getElementById('health').innerText = player.health;
     document.getElementById('score').innerText = player.score;
-
-    // Turret Warning UI
-    let timeElapsed = Date.now() - gameStartTime;
-    if (timeElapsed < 5000 && !player.dead && !player.win) {
-        ctx.fillStyle = "yellow";
-        ctx.font = "bold 16px Courier";
-        let timeLeft = Math.ceil((5000 - timeElapsed) / 1000);
-        ctx.fillText("TURRETS OFFLINE - STARTING IN: " + timeLeft + "s", 240, 40);
-    }
+    document.getElementById('stage').innerText = currentLevel;
 
     if (player.dead) {
-        ctx.fillStyle = "rgba(0,0,0,0.7)";
-        ctx.fillRect(0,0,canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.font = "20px Courier";
-        ctx.fillText("GAME OVER - PRESS F5 TO RESTART", 230, 200);
+        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,800,400);
+        ctx.fillStyle = "red"; ctx.font = "24px Courier"; ctx.fillText("DIED IN STAGE " + currentLevel + " - F5 TO TRY AGAIN", 180, 200);
     }
     if (player.win) {
-        ctx.fillStyle = "rgba(0,0,0,0.7)";
-        ctx.fillRect(0,0,canvas.width, canvas.height);
-        ctx.fillStyle = "gold";
-        ctx.font = "30px Courier";
-        ctx.fillText("YOU SAVED THE PRINCESS!", 200, 200);
+        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,800,400);
+        ctx.fillStyle = "gold"; ctx.font = "30px Courier"; ctx.fillText("CONGRATULATIONS HERO!", 220, 200);
     }
 }
 
+generateLevel(1);
 update();
 </script>
 </body>
